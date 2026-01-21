@@ -1,0 +1,10 @@
+# Inference & Deployment Settings
+DEVICE: auto
+BATCH_SIZE: 32
+CONFIDENCE_THRESHOLDS:
+  DIAL: 0.8
+  DIGIT: 0.6 # Lower threshold allowed inside a verified dial
+IMAGE_Process:
+  MAX_SIZE_MB: 10
+  TARGET_Resolution: [800, 600]
+  

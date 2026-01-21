@@ -1,0 +1,20 @@
+# data folder
+data/
+
+# logs folder
+logs/
+
+# checkpoints folder
+checkpoints/
+
+# runs folder
+runs/
+
+# results folder
+results/
+
+# Python
+__pycache__/
+*.pyc
+
+
