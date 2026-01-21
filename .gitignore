@@ -1,5 +1,6 @@
 # data folder
 data/
+!src/data/
 
 # logs folder
 logs/

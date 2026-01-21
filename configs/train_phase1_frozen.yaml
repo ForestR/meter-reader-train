@@ -1,0 +1,61 @@
+# Phase 1 Training Configuration: Head Adaptation (Frozen Backbone)
+# Goal: Rapidly adapt detection head to meter reading task while preserving ImageNet features
+
+# Model Configuration
+model: yolo11l.pt  # Pretrained YOLO11-Large weights
+task: detect
+
+# Data Configuration
+data: configs/data_end2end.yaml  # Generated from manifest
+
+# Training Hyperparameters
+epochs: 30
+batch: 16
+imgsz: 640
+device: 0  # GPU device (0 for first GPU, cpu for CPU)
+
+# Transfer Learning - Freeze Backbone
+freeze: 10  # Freeze first 10 layers (backbone CSP/ELAN modules)
+
+# Optimization
+optimizer: AdamW
+lr0: 0.01  # Initial learning rate
+lrf: 0.01  # Final learning rate (lr0 * lrf)
+momentum: 0.937
+weight_decay: 0.0005
+
+# Learning Rate Scheduling
+warmup_epochs: 3.0
+warmup_momentum: 0.8
+warmup_bias_lr: 0.1
+
+# Augmentation (includes angle correction)
+hsv_h: 0.015  # HSV-Hue augmentation
+hsv_s: 0.7    # HSV-Saturation augmentation
+hsv_v: 0.4    # HSV-Value augmentation
+degrees: 15.0  # CRITICAL: ±15° rotation augmentation for angle robustness
+translate: 0.1  # Translation augmentation
+scale: 0.5     # Scale augmentation
+shear: 0.0     # Shear augmentation
+perspective: 0.0005  # Perspective augmentation
+flipud: 0.0    # Vertical flip (disabled for meters)
+fliplr: 0.5    # Horizontal flip probability
+mosaic: 1.0    # Mosaic augmentation
+mixup: 0.1     # Mixup augmentation
+
+# Validation
+val: true
+save: true
+save_period: -1  # Save checkpoint every X epochs (-1 = only save last and best)
+exist_ok: true   # Allow overwriting existing experiment
+
+# Logging
+project: runs/detect
+name: train_phase1_end2end
+verbose: true
+plots: true  # Generate training plots
+
+# Advanced
+patience: 50  # Early stopping patience (epochs)
+close_mosaic: 10  # Disable mosaic augmentation for final epochs
+amp: true  # Automatic Mixed Precision training
