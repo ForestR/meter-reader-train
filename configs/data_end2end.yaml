@@ -1,0 +1,6 @@
+path: /backup/d.yin/meter-reader-train
+train: /backup/d.yin/meter-reader-train/configs/train_images.txt
+val: /backup/d.yin/meter-reader-train/configs/val_images.txt
+nc: 1
+names:
+- meter_display

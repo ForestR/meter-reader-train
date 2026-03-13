@@ -147,61 +147,63 @@ class ManifestLoader:
         """
         random.seed(seed)
         
-        # Collect all images with their weights
-        weighted_images = []
-        
+        # Pass 1: Labeled sources -> 80/20 train/val split
+        labeled_images = []
         for source_config in self.config.train_policy:
+            if source_config.is_negative_sample():
+                continue
             images = self.get_images_from_source(source_config)
             weight = source_config.weight
-            
-            # Calculate how many times to include each image based on weight
-            # Base multiplier: weight = 1.0 means include once
-            # weight = 2.0 means include twice, etc.
             base_count = int(weight)
             fractional_weight = weight - base_count
-            
             for img_path in images:
-                # Always add base_count times
                 for _ in range(base_count):
-                    weighted_images.append((str(img_path), source_config))
-                
-                # Add once more with probability = fractional_weight
+                    labeled_images.append(str(img_path))
                 if random.random() < fractional_weight:
-                    weighted_images.append((str(img_path), source_config))
+                    labeled_images.append(str(img_path))
         
-        # Shuffle to mix different sources
-        random.shuffle(weighted_images)
+        random.shuffle(labeled_images)
+        split_idx = int(len(labeled_images) * (1 - val_split))
+        train_images = list(labeled_images[:split_idx])
+        val_images = list(labeled_images[split_idx:])
         
-        # Split into train and val
-        split_idx = int(len(weighted_images) * (1 - val_split))
-        train_images = weighted_images[:split_idx]
-        val_images = weighted_images[split_idx:]
+        # Pass 2: Negative samples -> train only (create empty label stubs, exclude from val)
+        for source_config in self.config.train_policy:
+            if not source_config.is_negative_sample():
+                continue
+            images = self.get_images_from_source(source_config)
+            weight = source_config.weight
+            base_count = int(weight)
+            fractional_weight = weight - base_count
+            for img_path in images:
+                for _ in range(base_count):
+                    self.create_empty_label(str(img_path))
+                    train_images.append(str(img_path))
+                if random.random() < fractional_weight:
+                    self.create_empty_label(str(img_path))
+                    train_images.append(str(img_path))
         
-        return (
-            [img for img, _ in train_images],
-            [img for img, _ in val_images]
-        )
+        return (train_images, val_images)
     
     def create_empty_label(self, image_path: str) -> str:
         """
         Create an empty label file path for negative samples.
+        Places the label co-located with the images so Ultralytics can resolve it
+        (e.g. .../negative_samples/images/foo.jpg -> .../negative_samples/labels/foo.txt).
         
         Args:
             image_path: Path to the image file
             
         Returns:
-            Path where empty label should be created
+            Path where empty label was created
         """
         img_path = Path(image_path)
-        # Create labels in a temporary location
-        temp_labels_dir = self.workspace_root / 'data' / 'temp_labels'
-        temp_labels_dir.mkdir(parents=True, exist_ok=True)
-        
-        label_path = temp_labels_dir / f"{img_path.stem}.txt"
-        # Create empty file if it doesn't exist
+        # Derive co-located labels dir from image path
+        labels_dir = img_path.parent.parent / 'labels'
+        labels_dir.mkdir(parents=True, exist_ok=True)
+        label_path = labels_dir / f"{img_path.stem}.txt"
         if not label_path.exists():
             label_path.touch()
-        
         return str(label_path)
     
     def get_statistics(self) -> Dict:

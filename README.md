@@ -1,9 +1,3 @@
-Based on your original draft and the technical review provided, here is the **Refactored Project Plan**.
-
-This version professionalizes the terminology, formalizes the configuration management, and establishes a concrete data engineering strategy suitable for industrial deployment.
-
----
-
 # Project Plan: YOLO-based Meter Reading Fine-tuning Framework
 
 ## 1. Project Scope & Positioning

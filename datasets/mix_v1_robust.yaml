@@ -1,11 +1,9 @@
 # Training Mix for General Robustness
 train_policy:
-  - source: data/raw_xuzhou_2023
+  - source: data/basic_e2e
     weight: 1.0
-  - source: data/raw_changzhou_2024
-    weight: 1.0
-  - source: data/raw_negative_samples # The "Dirty" Dataset
+  - source: data/negative_samples # The "Dirty" Dataset
     weight: 0.2 # 20% of batch will be background to teach model what is NOT a meter
     label_map: empty # Images have no boxes
-  - source: data/raw_hard_cases
+  - source: data/hard_cases
     weight: 2.0 # Oversample hard cases
