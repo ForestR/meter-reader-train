@@ -1,7 +1,7 @@
 """
 Manual labeler: Interactive OpenCV GUI for drawing/correcting YOLO bounding boxes.
-Supports Stage 1 (dial bbox) and Stage 2 (digit bboxes in ROI crop).
-Uses pipeline prediction as optional starting point.
+Supports direct (digit bboxes with class 0-9 on full image), Stage 1 (dial bbox),
+and Stage 2 (digit bboxes in ROI crop). Uses pipeline prediction as optional hint.
 """
 
 import os
@@ -74,6 +74,31 @@ def _read_yolo_label(path: Path, img_w: int, img_h: int) -> List[Tuple[float, fl
     return boxes
 
 
+def _read_yolo_label_with_class(
+    path: Path, img_w: int, img_h: int
+) -> List[Tuple[float, float, float, float, int]]:
+    """Read YOLO label file with class column; returns list of (x1,y1,x2,y2,class)."""
+    result = []
+    if not path.exists():
+        return result
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split()
+            if len(parts) < 5:
+                continue
+            try:
+                cls = int(parts[0])
+                cx, cy, w, h = float(parts[1]), float(parts[2]), float(parts[3]), float(parts[4])
+                box = _yolo_to_xyxy(cx, cy, w, h, img_w, img_h)
+                result.append((box[0], box[1], box[2], box[3], cls))
+            except (ValueError, IndexError):
+                continue
+    return result
+
+
 class _LabelerState:
     """Mutable state for the OpenCV GUI callback."""
 
@@ -82,14 +107,20 @@ class _LabelerState:
         image: np.ndarray,
         boxes: List[Tuple[float, float, float, float]],
         hint_boxes: List[Tuple[float, float, float, float]],
-        stage: Literal["stage1", "stage2"],
+        stage: Literal["stage1", "stage2", "direct"],
         show_hint: bool,
+        boxes_with_class: Optional[List[Tuple[float, float, float, float, int]]] = None,
+        pending_box: Optional[Tuple[float, float, float, float]] = None,
+        hint_boxes_with_class: Optional[List[Tuple[float, float, float, float, int]]] = None,
     ):
         self.image = image
         self.boxes = list(boxes)
         self.hint_boxes = list(hint_boxes)
         self.stage = stage
         self.show_hint = show_hint
+        self.boxes_with_class = list(boxes_with_class or [])
+        self.pending_box = pending_box
+        self.hint_boxes_with_class = list(hint_boxes_with_class or [])
         self.drawing = False
         self.start_pt: Optional[Tuple[int, int]] = None
         self.current_pt: Optional[Tuple[int, int]] = None
@@ -142,16 +173,30 @@ def _make_display(state: _LabelerState) -> np.ndarray:
             state.offset_y + int(y2 * scale),
         )
 
-    if state.show_hint and state.hint_boxes:
-        for box in state.hint_boxes:
-            x1, y1, x2, y2 = scale_box(box)
-            _draw_dashed_rect(canvas, x1, y1, x2, y2, (0, 255, 255), 2)
+    if state.stage == "direct":
+        if state.show_hint and state.hint_boxes_with_class:
+            for box_cls in state.hint_boxes_with_class:
+                x1, y1, x2, y2 = scale_box(box_cls[:4])
+                _draw_dashed_rect(canvas, x1, y1, x2, y2, (0, 255, 255), 2)
+                cv2.putText(canvas, str(box_cls[4]), (x1, y1 - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+        for box_cls in state.boxes_with_class:
+            x1, y1, x2, y2 = scale_box(box_cls[:4])
+            cv2.rectangle(canvas, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            cv2.putText(canvas, str(box_cls[4]), (x1, y1 - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+        if state.pending_box:
+            x1, y1, x2, y2 = scale_box(state.pending_box)
+            cv2.rectangle(canvas, (x1, y1), (x2, y2), (255, 0, 0), 2)
+    else:
+        if state.show_hint and state.hint_boxes:
+            for box in state.hint_boxes:
+                x1, y1, x2, y2 = scale_box(box)
+                _draw_dashed_rect(canvas, x1, y1, x2, y2, (0, 255, 255), 2)
 
-    for i, box in enumerate(state.boxes):
-        x1, y1, x2, y2 = scale_box(box)
-        cv2.rectangle(canvas, (x1, y1), (x2, y2), (0, 255, 0), 2)
-        if state.stage == "stage2":
-            cv2.putText(canvas, str(i + 1), (x1, y1 - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+        for i, box in enumerate(state.boxes):
+            x1, y1, x2, y2 = scale_box(box)
+            cv2.rectangle(canvas, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            if state.stage == "stage2":
+                cv2.putText(canvas, str(i + 1), (x1, y1 - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
 
     if state.drawing and state.start_pt and state.current_pt:
         sx, sy = state.start_pt
@@ -160,10 +205,13 @@ def _make_display(state: _LabelerState) -> np.ndarray:
         dy1 = state.offset_y + int(sy * scale)
         dx2 = state.offset_x + int(cx * scale)
         dy2 = state.offset_y + int(cy * scale)
-        cv2.rectangle(canvas, (dx1, dy1), (dx2, dy2), (0, 255, 0), 2)
+        draw_color = (255, 0, 0) if state.stage == "direct" else (0, 255, 0)
+        cv2.rectangle(canvas, (dx1, dy1), (dx2, dy2), draw_color, 2)
 
     status = "Enter:save r:reset d:del h:hint s:skip q:quit"
-    if state.stage == "stage2":
+    if state.stage == "direct":
+        status += " | 0-9:assign pending box"
+    elif state.stage == "stage2":
         status += " | Draw digit boxes L->R"
     else:
         status += " | Draw dial box"
@@ -198,8 +246,10 @@ def _mouse_callback(event, x, y, flags, userdata):
             if x2 - x1 > 4 and y2 - y1 > 4:
                 if state.stage == "stage1":
                     state.boxes = [(float(x1), float(y1), float(x2), float(y2))]
-                else:
+                elif state.stage == "stage2":
                     state.boxes.append((float(x1), float(y1), float(x2), float(y2)))
+                elif state.stage == "direct":
+                    state.pending_box = (float(x1), float(y1), float(x2), float(y2))
             state.drawing = False
             state.start_pt = None
             state.current_pt = None
@@ -208,12 +258,12 @@ def _mouse_callback(event, x, y, flags, userdata):
 class ManualLabeler:
     """
     Interactive OpenCV GUI for manual labeling.
-    Supports Stage 1 (dial bbox) and Stage 2 (digit bboxes in ROI crop).
+    Supports direct (digit bboxes with class), Stage 1 (dial bbox), Stage 2 (digit bboxes in ROI).
     """
 
     def __init__(
         self,
-        stage: Literal["stage1", "stage2"],
+        stage: Literal["stage1", "stage2", "direct"],
         reader: Optional[PipelineReader] = None,
         window_size: Tuple[int, int] = (1280, 720),
     ):
@@ -348,6 +398,72 @@ class ManualLabeler:
                     hint_result = self.reader.predict(str(img_path))
                 except Exception:
                     pass
+
+            if self.stage == "direct":
+                work_image = img
+                work_w, work_h = w, h
+                hint_boxes_with_class: List[Tuple[float, float, float, float, int]] = []
+                if hint_result and hint_result.digit_boxes_in_img and hint_result.digit_classes:
+                    for box, cls in zip(hint_result.digit_boxes_in_img, hint_result.digit_classes):
+                        hint_boxes_with_class.append((box[0], box[1], box[2], box[3], cls))
+                existing_with_class = _read_yolo_label_with_class(label_path, w, h) if (review and label_path.exists()) else []
+                state = _LabelerState(
+                    work_image, [], [],
+                    "direct",
+                    show_hint=use_pipeline_hint and bool(hint_boxes_with_class),
+                    boxes_with_class=existing_with_class if existing_with_class else list(hint_boxes_with_class),
+                    hint_boxes_with_class=hint_boxes_with_class,
+                )
+                state.win_w, state.win_h = self.window_size
+
+                win_name = f"Manual Labeler [{idx + 1}/{total}] {img_path.name}"
+                cv2.namedWindow(win_name, cv2.WINDOW_NORMAL)
+                cv2.resizeWindow(win_name, state.win_w, state.win_h)
+                cv2.setMouseCallback(win_name, _mouse_callback, state)
+
+                result_direct: Optional[List[Tuple[float, float, float, float, int]]] = None
+                while True:
+                    disp = _make_display(state)
+                    cv2.imshow(win_name, disp)
+                    k = cv2.waitKey(30) & 0xFF
+                    if k == ord("q"):
+                        stats["quit"] = 1
+                        cv2.destroyAllWindows()
+                        return stats
+                    if k == ord("s"):
+                        stats["skipped"] += 1
+                        break
+                    if k == ord("r"):
+                        state.boxes_with_class = []
+                        state.pending_box = None
+                    if k == ord("d"):
+                        if state.pending_box is not None:
+                            state.pending_box = None
+                        elif state.boxes_with_class:
+                            state.boxes_with_class.pop()
+                    if ord("0") <= k <= ord("9") and state.pending_box is not None:
+                        cls = k - ord("0")
+                        state.boxes_with_class.append((*state.pending_box, cls))
+                        state.pending_box = None
+                    if k == ord("h"):
+                        state.show_hint = not state.show_hint
+                    if k in (13, 32):
+                        result_direct = list(state.boxes_with_class) if state.boxes_with_class else []
+                        break
+
+                cv2.destroyWindow(win_name)
+
+                if result_direct:
+                    with open(label_path, "w") as f:
+                        for x1, y1, x2, y2, cls in result_direct:
+                            cx, cy, bw, bh = _xyxy_to_yolo_norm(x1, y1, x2, y2, work_w, work_h)
+                            f.write(f"{cls} {cx:.6f} {cy:.6f} {bw:.6f} {bh:.6f}\n")
+                    out_img = dst_images / f"{stem}{img_path.suffix}"
+                    import shutil
+                    shutil.copy2(img_path, out_img)
+                    stats["labeled"] += 1
+
+                continue
 
             if self.stage == "stage2":
                 dial_box: Optional[Tuple[float, float, float, float]] = None

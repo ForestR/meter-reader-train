@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 CLI for manual labeling: interactive OpenCV GUI to draw/correct YOLO bounding boxes.
-Supports Stage 1 (dial bbox) and Stage 2 (digit bboxes in ROI crop).
-Uses pipeline prediction as optional starting point.
+Supports direct (digit bboxes with class 0-9), Stage 1 (dial bbox), Stage 2 (digit bboxes in ROI).
+Uses pipeline prediction as optional hint. Default mode is direct.
 """
 
 import argparse
@@ -33,9 +33,9 @@ def main():
     parser.add_argument(
         "--stage",
         type=str,
-        choices=["stage1", "stage2"],
-        required=True,
-        help="Labeling task: stage1=dial bbox, stage2=digit bboxes in ROI",
+        choices=["stage1", "stage2", "direct"],
+        default="direct",
+        help="Labeling task: direct=digit bboxes with class (default), stage1=dial bbox, stage2=digit bboxes in ROI",
     )
     parser.add_argument(
         "--resume",
