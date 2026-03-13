@@ -1,17 +1,17 @@
 # Phase 2 Training Configuration: Deep Fine-tuning (Unfrozen All Layers)
-# Pipeline Stage 1 (Dial Detection)
-# Goal: Allow backbone to learn domain-specific features (LCD reflections, mechanical fonts)
+# Pipeline Stage 2 (Digit Position Detection)
+# Goal: Allow backbone to learn domain-specific digit features
 
 # Model Configuration
-model: checkpoints/pipeline/stage1_dial/phase1_best.pt  # Resume from Phase 1 best model
+model: checkpoints/pipeline/stage2_digit/phase1_best.pt  # Resume from Phase 1 best model
 task: detect
 
 # Data Configuration
-data: configs/pipeline/stage1_dial/data.yaml  # Same data as Phase 1
+data: configs/pipeline/stage2_digit/data.yaml  # Same data as Phase 1
 
 # Training Hyperparameters
 epochs: 50
-batch: 32
+batch: 16
 imgsz: 640
 device: 0  # GPU device (0 for first GPU, cpu for CPU)
 
@@ -30,17 +30,17 @@ warmup_epochs: 5.0  # Longer warmup for fine-tuning
 warmup_momentum: 0.8
 warmup_bias_lr: 0.01
 
-# Augmentation (same as Phase 1, with angle correction)
+# Augmentation (same as Phase 1)
 hsv_h: 0.015  # HSV-Hue augmentation
 hsv_s: 0.7    # HSV-Saturation augmentation
 hsv_v: 0.4    # HSV-Value augmentation
-degrees: 15.0  # CRITICAL: ±15° rotation augmentation for angle robustness
+degrees: 5.0  # Reduced: ROI crops are already roughly aligned
 translate: 0.1  # Translation augmentation
 scale: 0.5     # Scale augmentation
 shear: 0.0     # Shear augmentation
 perspective: 0.0005  # Perspective augmentation
-flipud: 0.0    # Vertical flip (disabled for meters)
-fliplr: 0.5    # Horizontal flip probability
+flipud: 0.0    # Vertical flip disabled (digit row order is meaningful)
+fliplr: 0.0    # Horizontal flip disabled (digit order is meaningful)
 mosaic: 1.0    # Mosaic augmentation
 mixup: 0.1     # Mixup augmentation
 
@@ -52,7 +52,7 @@ exist_ok: true   # Allow overwriting existing experiment
 
 # Logging
 project: runs/detect
-name: train_phase2_stage1_dial
+name: train_phase2_stage2_digit
 verbose: true
 plots: true  # Generate training plots
 

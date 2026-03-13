@@ -3,6 +3,16 @@ Data loading and manifest management
 """
 
 from .manifest_loader import ManifestConfig, ManifestLoader
-from .data_yaml_generator import DataYAMLGenerator, generate_stage1_data_yaml
+from .data_yaml_generator import (
+    DataYAMLGenerator,
+    generate_stage1_data_yaml,
+    generate_stage2_data_yaml,
+)
 
-__all__ = ['ManifestConfig', 'ManifestLoader', 'DataYAMLGenerator', 'generate_stage1_data_yaml']
+__all__ = [
+    'ManifestConfig',
+    'ManifestLoader',
+    'DataYAMLGenerator',
+    'generate_stage1_data_yaml',
+    'generate_stage2_data_yaml',
+]

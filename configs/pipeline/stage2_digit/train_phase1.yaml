@@ -1,13 +1,13 @@
 # Phase 1 Training Configuration: Head Adaptation (Frozen Backbone)
-# Pipeline Stage 1 (Dial Detection)
-# Goal: Rapidly adapt detection head to meter reading task while preserving ImageNet features
+# Pipeline Stage 2 (Digit Position Detection)
+# Goal: Rapidly adapt detection head to digit position task within dial ROI
 
 # Model Configuration
 model: yolo26n.pt  # Pretrained YOLO26-N weights
 task: detect
 
 # Data Configuration
-data: configs/pipeline/stage1_dial/data.yaml  # Generated from manifest
+data: configs/pipeline/stage2_digit/data.yaml  # Generated from manifest
 
 # Training Hyperparameters
 epochs: 30
@@ -16,7 +16,7 @@ imgsz: 640
 device: 0  # GPU device (0 for first GPU, cpu for CPU)
 
 # Transfer Learning - Freeze Backbone
-freeze: 10  # Freeze first 10 layers (backbone CSP/ELAN modules)
+freeze: 10  # Freeze first 10 layers (backbone)
 
 # Optimization
 optimizer: AdamW
@@ -30,17 +30,17 @@ warmup_epochs: 3.0
 warmup_momentum: 0.8
 warmup_bias_lr: 0.1
 
-# Augmentation (includes angle correction)
+# Augmentation (ROI crops are already aligned; reduced flip/rotation)
 hsv_h: 0.015  # HSV-Hue augmentation
 hsv_s: 0.7    # HSV-Saturation augmentation
 hsv_v: 0.4    # HSV-Value augmentation
-degrees: 15.0  # CRITICAL: ±15° rotation augmentation for angle robustness
+degrees: 5.0  # Reduced: ROI crops are already roughly aligned
 translate: 0.1  # Translation augmentation
 scale: 0.5     # Scale augmentation
 shear: 0.0     # Shear augmentation
 perspective: 0.0005  # Perspective augmentation
-flipud: 0.0    # Vertical flip (disabled for meters)
-fliplr: 0.5    # Horizontal flip probability
+flipud: 0.0    # Vertical flip disabled (digit row order is meaningful)
+fliplr: 0.0    # Horizontal flip disabled (digit order is meaningful)
 mosaic: 1.0    # Mosaic augmentation
 mixup: 0.1     # Mixup augmentation
 
@@ -52,7 +52,7 @@ exist_ok: true   # Allow overwriting existing experiment
 
 # Logging
 project: runs/detect
-name: train_phase1_stage1_dial
+name: train_phase1_stage2_digit
 verbose: true
 plots: true  # Generate training plots
 

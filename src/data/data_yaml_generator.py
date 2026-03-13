@@ -119,7 +119,26 @@ class DataYAMLGenerator:
             val_split=0.2,
             seed=42
         )
-    
+
+    def generate_for_pipeline_stage2(self, output_path: str = 'configs/pipeline/stage2_digit/data.yaml') -> Dict:
+        """
+        Generate data.yaml for Pipeline Stage 2 (digit position detection) training.
+        Stage 2 detects digit bounding boxes within dial ROI as a single class (digit).
+        
+        Args:
+            output_path: Path where data.yaml will be saved
+            
+        Returns:
+            Dictionary containing the data configuration
+        """
+        return self.generate_data_yaml(
+            output_path=output_path,
+            num_classes=1,
+            class_names=['digit'],
+            val_split=0.2,
+            seed=42
+        )
+
     def generate_for_pipeline_stage(self,
                                      stage: str,
                                      num_classes: int,
@@ -184,6 +203,39 @@ def generate_stage1_data_yaml(manifest_path: str = 'datasets/mix_v1_robust.yaml'
         print("  data/raw_changzhou_2024/")
         print("  data/raw_negative_samples/")
         print("  data/raw_hard_cases/")
+        return None
+    except Exception as e:
+        print(f"✗ Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+
+def generate_stage2_data_yaml(manifest_path: str = 'datasets/mix_v1_stage2.yaml',
+                               output_path: str = 'configs/pipeline/stage2_digit/data.yaml'):
+    """
+    Convenience function to generate Pipeline Stage 2 data.yaml from manifest.
+    
+    Args:
+        manifest_path: Path to manifest YAML file
+        output_path: Path where data.yaml will be saved
+    """
+    print(f"Generating data configuration from manifest: {manifest_path}")
+    print()
+    
+    try:
+        loader = ManifestLoader(manifest_path)
+        loader.print_statistics()
+        print("\nGenerating Ultralytics data configuration...")
+        generator = DataYAMLGenerator(loader)
+        config = generator.generate_for_pipeline_stage2(output_path)
+        print()
+        print("✓ Data configuration generated successfully!")
+        print(f"  Use this config in training: data={output_path}")
+        return config
+    except FileNotFoundError as e:
+        print(f"✗ Error: {e}")
+        print("\nPlease run scripts/prepare_stage2_data.py first to create data/basic_stage2")
         return None
     except Exception as e:
         print(f"✗ Error: {e}")

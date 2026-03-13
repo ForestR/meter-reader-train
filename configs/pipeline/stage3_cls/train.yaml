@@ -1,0 +1,48 @@
+# Pipeline Stage 3 (Digit Classification) Training Configuration
+# Classifies each digit crop into 0-9. Single-phase training.
+
+# Model Configuration
+model: yolo26n-cls.pt  # Classification backbone
+task: classify
+
+# Data Configuration
+data: configs/pipeline/stage3_cls/data.yaml  # Points to data/digit_crops/
+
+# Training Hyperparameters
+epochs: 50
+batch: 64  # Larger batch; small 80x80 images
+imgsz: 80
+device: 0  # GPU device (0 for first GPU, cpu for CPU)
+
+# Optimization
+optimizer: AdamW
+lr0: 0.01
+lrf: 0.01
+momentum: 0.937
+weight_decay: 0.0005
+
+# Learning Rate Scheduling
+warmup_epochs: 3.0
+warmup_momentum: 0.8
+warmup_bias_lr: 0.1
+
+# Augmentation (flipping would change digit identity: 6 <-> 9)
+degrees: 5.0  # Slight rotation for robustness
+flipud: 0.0   # Vertical flip disabled (6 <-> 9)
+fliplr: 0.0   # Horizontal flip disabled (digit identity)
+
+# Validation
+val: true
+save: true
+save_period: -1
+exist_ok: true
+
+# Logging
+project: runs/classify
+name: train_stage3_cls
+verbose: true
+plots: true
+
+# Advanced
+patience: 30  # Early stopping
+amp: true  # Automatic Mixed Precision training

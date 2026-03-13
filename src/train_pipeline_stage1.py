@@ -118,6 +118,10 @@ class Stage1DialTrainer:
         # Update data path in config
         train_config['data'] = data_yaml
 
+        # Use absolute project path to avoid nested runs/detect/runs/detect when cwd or
+        # Ultralytics base path differs from workspace root (project must be absolute)
+        train_config['project'] = str(self.workspace_root / 'runs' / 'detect')
+
         print(f"Configuration: {config_path}")
         print(f"Model: {train_config['model']}")
         print(f"Epochs: {train_config['epochs']}")
@@ -226,6 +230,9 @@ class Stage1DialTrainer:
         # Update paths in config
         train_config['model'] = phase1_model
         train_config['data'] = data_yaml
+
+        # Use absolute project path to avoid nested runs/detect/runs/detect (same as Phase 1)
+        train_config['project'] = str(self.workspace_root / 'runs' / 'detect')
 
         print(f"Configuration: {config_path}")
         print(f"Model: {phase1_model}")
