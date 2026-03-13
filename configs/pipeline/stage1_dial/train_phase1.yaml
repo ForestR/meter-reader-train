@@ -1,4 +1,5 @@
 # Phase 1 Training Configuration: Head Adaptation (Frozen Backbone)
+# Pipeline Stage 1 (Dial Detection)
 # Goal: Rapidly adapt detection head to meter reading task while preserving ImageNet features
 
 # Model Configuration
@@ -6,7 +7,7 @@ model: yolo11l.pt  # Pretrained YOLO11-Large weights
 task: detect
 
 # Data Configuration
-data: configs/data_end2end.yaml  # Generated from manifest
+data: configs/pipeline/stage1_dial/data.yaml  # Generated from manifest
 
 # Training Hyperparameters
 epochs: 30
@@ -51,7 +52,7 @@ exist_ok: true   # Allow overwriting existing experiment
 
 # Logging
 project: runs/detect
-name: train_phase1_end2end
+name: train_phase1_stage1_dial
 verbose: true
 plots: true  # Generate training plots
 

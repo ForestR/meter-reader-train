@@ -353,7 +353,7 @@ Both include:
    ```
 
 8. **Update config**:
-   Edit `config/model_topology.yaml`:
+   Edit `configs/model_topology.yaml`:
    ```yaml
    CHECKPOINTS:
      END2END: checkpoints/end2end/final.pt

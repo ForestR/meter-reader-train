@@ -7,4 +7,3 @@ CONFIDENCE_THRESHOLDS:
 IMAGE_Process:
   MAX_SIZE_MB: 10
   TARGET_Resolution: [800, 600]
-  

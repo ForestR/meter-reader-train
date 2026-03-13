@@ -8,4 +8,3 @@ CHECKPOINTS:
     STAGE_1_DIAL: checkpoints/production/01_dial_det.pt  # Formerly 'seg', renamed to 'det'
     STAGE_2_DIGIT: checkpoints/production/02_digit_det.pt # Formerly 'seg', renamed to 'det'
     STAGE_3_CLS: checkpoints/production/03_digit_cls.pt
-    

@@ -101,10 +101,10 @@ class DataYAMLGenerator:
         
         return data_config
     
-    def generate_for_end2end(self, output_path: str = 'configs/data_end2end.yaml') -> Dict:
+    def generate_for_pipeline_stage1(self, output_path: str = 'configs/pipeline/stage1_dial/data.yaml') -> Dict:
         """
-        Generate data.yaml specifically for end-to-end model training.
-        End-to-end models detect the entire meter display as a single class.
+        Generate data.yaml for Pipeline Stage 1 (dial detection) training.
+        Stage 1 detects the meter display ROI as a single class (meter_display).
         
         Args:
             output_path: Path where data.yaml will be saved
@@ -149,10 +149,10 @@ class DataYAMLGenerator:
         )
 
 
-def generate_end2end_data_yaml(manifest_path: str = 'datasets/mix_v1_robust.yaml',
-                                output_path: str = 'configs/data_end2end.yaml'):
+def generate_stage1_data_yaml(manifest_path: str = 'datasets/mix_v1_robust.yaml',
+                               output_path: str = 'configs/pipeline/stage1_dial/data.yaml'):
     """
-    Convenience function to generate end-to-end data.yaml from manifest.
+    Convenience function to generate Pipeline Stage 1 data.yaml from manifest.
     
     Args:
         manifest_path: Path to manifest YAML file
@@ -169,7 +169,7 @@ def generate_end2end_data_yaml(manifest_path: str = 'datasets/mix_v1_robust.yaml
         # Generate data.yaml
         print("\nGenerating Ultralytics data configuration...")
         generator = DataYAMLGenerator(loader)
-        config = generator.generate_for_end2end(output_path)
+        config = generator.generate_for_pipeline_stage1(output_path)
         
         print()
         print("✓ Data configuration generated successfully!")
@@ -193,4 +193,4 @@ def generate_end2end_data_yaml(manifest_path: str = 'datasets/mix_v1_robust.yaml
 
 
 if __name__ == '__main__':
-    generate_end2end_data_yaml()
+    generate_stage1_data_yaml()

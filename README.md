@@ -30,7 +30,7 @@ We support two deployment topologies: **End-to-End** and **3-Stage Pipeline**.
 ### 2.2 Configuration Management
 *Refactored to separate Model Topology from Runtime settings.*
 
-**`config/model_topology.yaml`**
+**`configs/model_topology.yaml`**
 ```yaml
 # Model Architecture Definition
 MODEL_TYPE: pipeline # 'end2end' or 'pipeline'
@@ -44,7 +44,7 @@ CHECKPOINTS:
     STAGE_3_CLS: checkpoints/production/03_digit_cls.pt
 ```
 
-**`config/runtime_policy.yaml`**
+**`configs/runtime_policy.yaml`**
 ```yaml
 # Inference & Deployment Settings
 DEVICE: auto

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-End-to-End Model Training Script
-Orchestrates Phase 1 (Frozen Backbone) and Phase 2 (Unfrozen Fine-tuning) training.
+Pipeline Stage 1 (Dial Detection) Training Script
+Trains a YOLO detector to localize the meter display ROI. Uses a 2-phase strategy:
+Phase 1 (Frozen Backbone) and Phase 2 (Unfrozen Fine-tuning).
 """
 
 import os
@@ -26,17 +27,18 @@ except ImportError:
     print("⚠ Warning: Ultralytics not installed. Install with: pip install ultralytics")
 
 
-class End2EndTrainer:
+class Stage1DialTrainer:
     """
-    Orchestrates end-to-end model training with phased strategy.
+    Orchestrates Pipeline Stage 1 (dial detection) training with phased strategy.
+    Produces a single-class detector for meter_display ROI localization.
     """
-    
-    def __init__(self, 
+
+    def __init__(self,
                  manifest_path: str = 'datasets/mix_v1_robust.yaml',
                  workspace_root: str = None):
         """
         Initialize the trainer.
-        
+
         Args:
             manifest_path: Path to dataset manifest YAML
             workspace_root: Root directory for the project
@@ -47,51 +49,53 @@ class End2EndTrainer:
             self.workspace_root = Path.cwd()
         else:
             self.workspace_root = Path(workspace_root)
-        
+
         # Paths
         self.configs_dir = self.workspace_root / 'configs'
-        self.checkpoints_dir = self.workspace_root / 'checkpoints' / 'end2end'
+        self.stage_config_dir = self.configs_dir / 'pipeline' / 'stage1_dial'
+        self.checkpoints_dir = self.workspace_root / 'checkpoints' / 'pipeline' / 'stage1_dial'
         self.results_dir = self.workspace_root / 'results'
-        
+
         # Create directories
         self.checkpoints_dir.mkdir(parents=True, exist_ok=True)
         self.results_dir.mkdir(parents=True, exist_ok=True)
-        
+
         print("=" * 80)
-        print("END-TO-END MODEL TRAINER")
+        print("PIPELINE STAGE 1: DIAL DETECTION TRAINER")
         print("=" * 80)
         print(f"Workspace: {self.workspace_root}")
         print(f"Manifest: {self.manifest_path}")
         print()
-    
+
     def prepare_data(self):
         """
         Prepare data configuration from manifest.
         """
         print("STEP 1: Preparing Data Configuration")
         print("-" * 80)
-        
+
         # Load manifest
         loader = ManifestLoader(str(self.manifest_path), str(self.workspace_root))
         loader.print_statistics()
-        
+
         # Generate data.yaml
         print("\nGenerating Ultralytics data configuration...")
         generator = DataYAMLGenerator(loader)
-        data_yaml_path = self.configs_dir / 'data_end2end.yaml'
-        config = generator.generate_for_end2end(str(data_yaml_path))
-        
+        data_yaml_path = self.stage_config_dir / 'data.yaml'
+        data_yaml_path.parent.mkdir(parents=True, exist_ok=True)
+        config = generator.generate_for_pipeline_stage1(str(data_yaml_path))
+
         print()
         return str(data_yaml_path)
-    
+
     def train_phase1(self, data_yaml: str, dry_run: bool = False):
         """
         Execute Phase 1 training: Head Adaptation with frozen backbone.
-        
+
         Args:
             data_yaml: Path to data configuration YAML
             dry_run: If True, only validate configuration without training
-            
+
         Returns:
             Path to best model checkpoint
         """
@@ -101,19 +105,19 @@ class End2EndTrainer:
         print("Strategy: Freeze backbone, train only Neck + Head")
         print("Goal: Rapidly adapt to meter reading task while preserving ImageNet features")
         print()
-        
+
         if not ULTRALYTICS_AVAILABLE:
             print("✗ Cannot train: Ultralytics not installed")
             return None
-        
+
         # Load training configuration
-        config_path = self.configs_dir / 'train_phase1_frozen.yaml'
+        config_path = self.stage_config_dir / 'train_phase1.yaml'
         with open(config_path, 'r') as f:
             train_config = yaml.safe_load(f)
-        
+
         # Update data path in config
         train_config['data'] = data_yaml
-        
+
         print(f"Configuration: {config_path}")
         print(f"Model: {train_config['model']}")
         print(f"Epochs: {train_config['epochs']}")
@@ -122,17 +126,17 @@ class End2EndTrainer:
         print(f"Learning Rate: {train_config['lr0']}")
         print(f"Rotation Augmentation: ±{train_config['degrees']}°")
         print()
-        
+
         if dry_run:
             print("✓ Dry run: Configuration validated")
             return None
-        
+
         # Initialize model and train
         print("Starting Phase 1 training...")
         print()
-        
+
         model = YOLO(train_config['model'])
-        
+
         # Train with configuration
         results = model.train(
             data=train_config['data'],
@@ -173,14 +177,14 @@ class End2EndTrainer:
             close_mosaic=train_config['close_mosaic'],
             amp=train_config['amp']
         )
-        
+
         # Find best model
         best_model_path = Path(results.save_dir) / 'weights' / 'best.pt'
-        
+
         # Copy to checkpoints directory
         phase1_checkpoint = self.checkpoints_dir / 'phase1_best.pt'
         shutil.copy(best_model_path, phase1_checkpoint)
-        
+
         print()
         print("=" * 80)
         print(f"✓ Phase 1 Complete!")
@@ -188,18 +192,18 @@ class End2EndTrainer:
         print(f"  Training logs: {results.save_dir}")
         print("=" * 80)
         print()
-        
+
         return str(phase1_checkpoint)
-    
+
     def train_phase2(self, phase1_model: str, data_yaml: str, dry_run: bool = False):
         """
         Execute Phase 2 training: Deep Fine-tuning with unfrozen layers.
-        
+
         Args:
             phase1_model: Path to Phase 1 best model
             data_yaml: Path to data configuration YAML
             dry_run: If True, only validate configuration without training
-            
+
         Returns:
             Path to final best model checkpoint
         """
@@ -209,20 +213,20 @@ class End2EndTrainer:
         print("Strategy: Unfreeze all layers, lower learning rate")
         print("Goal: Learn domain-specific features (LCD reflections, mechanical fonts)")
         print()
-        
+
         if not ULTRALYTICS_AVAILABLE:
             print("✗ Cannot train: Ultralytics not installed")
             return None
-        
+
         # Load training configuration
-        config_path = self.configs_dir / 'train_phase2_unfrozen.yaml'
+        config_path = self.stage_config_dir / 'train_phase2.yaml'
         with open(config_path, 'r') as f:
             train_config = yaml.safe_load(f)
-        
+
         # Update paths in config
         train_config['model'] = phase1_model
         train_config['data'] = data_yaml
-        
+
         print(f"Configuration: {config_path}")
         print(f"Model: {phase1_model}")
         print(f"Epochs: {train_config['epochs']}")
@@ -231,17 +235,17 @@ class End2EndTrainer:
         print(f"Learning Rate: {train_config['lr0']} (10% of Phase 1)")
         print(f"Rotation Augmentation: ±{train_config['degrees']}°")
         print()
-        
+
         if dry_run:
             print("✓ Dry run: Configuration validated")
             return None
-        
+
         # Initialize model and train
         print("Starting Phase 2 training...")
         print()
-        
+
         model = YOLO(phase1_model)
-        
+
         # Train with configuration
         results = model.train(
             data=train_config['data'],
@@ -283,18 +287,18 @@ class End2EndTrainer:
             amp=train_config['amp'],
             resume=train_config.get('resume', False)
         )
-        
+
         # Find best model
         best_model_path = Path(results.save_dir) / 'weights' / 'best.pt'
-        
+
         # Copy to checkpoints directory
         final_checkpoint = self.checkpoints_dir / 'phase2_best.pt'
         shutil.copy(best_model_path, final_checkpoint)
-        
+
         # Also save as final.pt
         final_model = self.checkpoints_dir / 'final.pt'
         shutil.copy(best_model_path, final_model)
-        
+
         print()
         print("=" * 80)
         print(f"✓ Phase 2 Complete!")
@@ -303,13 +307,13 @@ class End2EndTrainer:
         print(f"  Training logs: {results.save_dir}")
         print("=" * 80)
         print()
-        
+
         return str(final_checkpoint)
-    
+
     def save_training_report(self, phase1_model: str, phase2_model: str):
         """
         Save a summary report of the training process.
-        
+
         Args:
             phase1_model: Path to Phase 1 best model
             phase2_model: Path to Phase 2 best model
@@ -318,27 +322,28 @@ class End2EndTrainer:
             'training_date': datetime.now().isoformat(),
             'manifest': str(self.manifest_path),
             'workspace': str(self.workspace_root),
+            'stage': 'pipeline_stage1_dial',
             'phase1': {
                 'model': phase1_model,
-                'config': 'configs/train_phase1_frozen.yaml'
+                'config': 'configs/pipeline/stage1_dial/train_phase1.yaml'
             },
             'phase2': {
                 'model': phase2_model,
-                'config': 'configs/train_phase2_unfrozen.yaml'
+                'config': 'configs/pipeline/stage1_dial/train_phase2.yaml'
             },
             'final_model': str(self.checkpoints_dir / 'final.pt')
         }
-        
+
         report_path = self.results_dir / 'training_report.yaml'
         with open(report_path, 'w') as f:
             yaml.dump(report, f, default_flow_style=False)
-        
+
         print(f"✓ Training report saved: {report_path}")
-    
+
     def run(self, dry_run: bool = False, phase1_only: bool = False):
         """
-        Execute complete training pipeline.
-        
+        Execute complete Stage 1 training pipeline.
+
         Args:
             dry_run: If True, only validate without training
             phase1_only: If True, only run Phase 1
@@ -346,27 +351,27 @@ class End2EndTrainer:
         try:
             # Step 1: Prepare data
             data_yaml = self.prepare_data()
-            
+
             # Step 2: Phase 1 training
             phase1_model = self.train_phase1(data_yaml, dry_run)
-            
+
             if dry_run:
                 print("\n✓ Dry run complete! Ready to train.")
                 return
-            
+
             if phase1_only:
                 print("\n✓ Phase 1 training complete!")
                 return
-            
+
             # Step 3: Phase 2 training
             phase2_model = self.train_phase2(phase1_model, data_yaml, dry_run)
-            
+
             # Step 4: Save report
             self.save_training_report(phase1_model, phase2_model)
-            
+
             print()
             print("=" * 80)
-            print("🎉 TRAINING COMPLETE!")
+            print("🎉 STAGE 1 TRAINING COMPLETE!")
             print("=" * 80)
             print(f"Final model: {self.checkpoints_dir / 'final.pt'}")
             print(f"Checkpoints: {self.checkpoints_dir}")
@@ -374,10 +379,10 @@ class End2EndTrainer:
             print()
             print("Next steps:")
             print("  1. Evaluate model on test set")
-            print("  2. Update config/model_topology.yaml with final model path")
-            print("  3. Deploy to edge devices")
+            print("  2. Update configs/model_topology.yaml with final model path")
+            print("  3. Train Stage 2 (digit detection) or deploy to edge devices")
             print("=" * 80)
-            
+
         except FileNotFoundError as e:
             print(f"\n✗ Error: {e}")
             print("\nPlease ensure data directories exist. See README_TRAINING.md for setup.")
@@ -392,7 +397,7 @@ class End2EndTrainer:
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
-        description='Train end-to-end meter reading model with phased strategy'
+        description='Train Pipeline Stage 1 (dial detection) with phased strategy'
     )
     parser.add_argument(
         '--manifest',
@@ -416,15 +421,15 @@ def main():
         action='store_true',
         help='Only run Phase 1 training'
     )
-    
+
     args = parser.parse_args()
-    
+
     # Create trainer and run
-    trainer = End2EndTrainer(
+    trainer = Stage1DialTrainer(
         manifest_path=args.manifest,
         workspace_root=args.workspace
     )
-    
+
     trainer.run(
         dry_run=args.dry_run,
         phase1_only=args.phase1_only

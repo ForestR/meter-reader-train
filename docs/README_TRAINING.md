@@ -1,6 +1,6 @@
-# Training Guide: End-to-End Meter Reading Model
+# Training Guide: Meter Reading Models
 
-This guide walks you through training a YOLO11-based end-to-end meter reading model using the phased training strategy.
+This guide walks you through training YOLO11-based meter reading models. Pipeline Stage 1 (dial detection) uses a phased training strategy.
 
 ## Table of Contents
 
@@ -175,19 +175,19 @@ Training follows a **2-phase strategy**:
    - Learn domain-specific features (LCD reflections, mechanical fonts)
    - 10% learning rate of Phase 1
 
-### Quick Start Training
+### Quick Start Training (Pipeline Stage 1 - Dial Detection)
 
-Run the complete training pipeline:
+Run the complete Stage 1 training pipeline:
 
 ```bash
-python src/train_end2end.py
+python train.py --model pipeline-stage1
 ```
 
 This will:
 1. Load the manifest and generate data configuration
 2. Execute Phase 1 training (frozen backbone)
 3. Execute Phase 2 training (unfrozen, fine-tuning)
-4. Save checkpoints to `checkpoints/end2end/`
+4. Save checkpoints to `checkpoints/pipeline/stage1_dial/`
 
 ### Step-by-Step Training
 
@@ -196,7 +196,7 @@ This will:
 Test your configuration without training:
 
 ```bash
-python src/train_end2end.py --dry-run
+python train.py --model pipeline-stage1 --dry-run
 ```
 
 #### Phase 1 Only
@@ -204,7 +204,7 @@ python src/train_end2end.py --dry-run
 Train only Phase 1 (useful for quick iterations):
 
 ```bash
-python src/train_end2end.py --phase1-only
+python train.py --model pipeline-stage1 --phase1-only
 ```
 
 #### Resume from Phase 1
@@ -212,10 +212,10 @@ python src/train_end2end.py --phase1-only
 If Phase 1 completed successfully, manually run Phase 2:
 
 ```bash
-# Edit configs/train_phase2_unfrozen.yaml
+# Edit configs/pipeline/stage1_dial/train_phase2.yaml
 # Set resume: true if interrupted
 
-python src/train_end2end.py
+python train.py --model pipeline-stage1
 ```
 
 ### Monitoring Training
@@ -288,7 +288,7 @@ train_policy:
 EOF
 
 # Train with custom manifest
-python src/train_end2end.py --manifest datasets/my_custom_mix.yaml
+python train.py --model pipeline-stage1 --manifest datasets/my_custom_mix.yaml
 ```
 
 ### Adjust Hyperparameters
@@ -329,11 +329,11 @@ If training is interrupted:
 
 ```bash
 # Phase 1 interruption
-python src/train_end2end.py --phase1-only
+python train.py --model pipeline-stage1 --phase1-only
 
 # Phase 2 interruption
 # Edit configs/train_phase2_unfrozen.yaml: resume: true
-python src/train_end2end.py
+python train.py --model pipeline-stage1
 ```
 
 ## Model Evaluation
@@ -443,10 +443,11 @@ pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
 
 After successful training:
 
-1. **Update model topology**: Edit `config/model_topology.yaml`:
+1. **Update model topology**: Edit `configs/model_topology.yaml`:
    ```yaml
    CHECKPOINTS:
-     END2END: checkpoints/end2end/final.pt
+     PIPELINE:
+       STAGE_1_DIAL: checkpoints/pipeline/stage1_dial/final.pt
    ```
 
 2. **Export for deployment**: Convert to ONNX/TensorRT for edge devices:
