@@ -20,3 +20,6 @@ __pycache__/
 
 # model file
 *.pt
+
+# temp file
+tmp/

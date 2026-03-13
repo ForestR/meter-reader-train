@@ -5,6 +5,9 @@ MODEL_TYPE: pipeline # 'end2end' or 'pipeline'
 CHECKPOINTS:
   END2END: checkpoints/production/end2end_yolo11l.pt
   PIPELINE:
-    STAGE_1_DIAL: checkpoints/production/01_dial_det.pt  # Formerly 'seg', renamed to 'det'
-    STAGE_2_DIGIT: checkpoints/production/02_digit_det.pt # Formerly 'seg', renamed to 'det'
-    STAGE_3_CLS: checkpoints/production/03_digit_cls.pt
+    # STAGE_1_DIAL: checkpoints/production/01_dial_det.pt  
+    # STAGE_2_DIGIT: checkpoints/production/02_digit_det.pt 
+    # STAGE_3_CLS: checkpoints/production/03_digit_cls.pt
+    STAGE_1_DIAL: checkpoints/pipeline/stage1_dial/final.pt
+    STAGE_2_DIGIT: checkpoints/pipeline/stage2_digit/final.pt
+    STAGE_3_CLS: checkpoints/pipeline/stage3_cls/final.pt
