@@ -3,7 +3,7 @@ train_policy:
   - source: data/basic
     weight: 1.0
     label_map: digit_to_position
-  # - source: data/basic_stage2  # Optional: directly used labels without lable_map
+  # - source: data/basic_stage2  # Optional: directly used labels without label_map
   #   weight: 1.0
   - source: data/city_Xuzhou
     weight: 2.0

@@ -11,6 +11,11 @@ from pathlib import Path
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Tuple
 
+try:
+    from PIL import Image as PILImage
+except ImportError:
+    PILImage = None
+
 
 @dataclass
 class DataSourceConfig:
@@ -18,7 +23,7 @@ class DataSourceConfig:
     source: str
     weight: float
     label_map: Optional[str] = None
-    
+
     def is_negative_sample(self) -> bool:
         """Check if this source contains negative samples (no labels)."""
         return self.label_map == 'empty'
@@ -45,6 +50,7 @@ class ManifestConfig:
         
         train_policy = []
         for item in data.get('train_policy', []):
+            item = {k: v for k, v in item.items() if k in ('source', 'weight', 'label_map')}
             train_policy.append(DataSourceConfig(**item))
         
         return cls(train_policy=train_policy)
@@ -139,48 +145,140 @@ class ManifestLoader:
 
     def _ensure_digit_to_position_cache(self, source_config: DataSourceConfig) -> Path:
         """
-        Convert digit-level labels (classes 0-9) to class-agnostic position labels (all class 0).
-        Keeps each individual bounding box; only remaps class IDs.
-        Writes converted labels to a sibling '<source>_pos/' directory.
-        Idempotent: skips conversion for labels that already exist.
+        Crop images to dial ROI and re-normalize digit labels into crop space.
+        ROI is derived from the union of all digit bounding boxes (same as digit_to_dial).
+        Writes cropped images and re-normalized labels to '<source>_pos/'.
+        Idempotent: skips images whose output label already exists.
         Returns the path to the converted source root.
         """
+        if PILImage is None:
+            raise ImportError("PIL/Pillow required for digit_to_position. Install with: pip install Pillow")
+
         src_path = self.resolve_path(source_config.source)
         dst_path = src_path.parent / (src_path.name + '_pos')
         dst_labels = dst_path / 'labels'
         dst_images = dst_path / 'images'
+        src_images_dir = src_path / 'images'
         src_labels = src_path / 'labels'
 
+        if not src_images_dir.exists():
+            raise FileNotFoundError(f"Images directory not found: {src_images_dir}")
         if not src_labels.exists():
             raise FileNotFoundError(f"Labels directory not found: {src_labels}")
 
         dst_labels.mkdir(parents=True, exist_ok=True)
-        if not dst_images.exists():
-            dst_images.symlink_to((src_path / 'images').resolve())
+        dst_images.mkdir(parents=True, exist_ok=True)
 
-        for src_label in sorted(src_labels.glob('*.txt')):
-            dst_label = dst_labels / src_label.name
+        padding = 0.05
+
+        images = []
+        for ext in self.image_extensions:
+            images.extend(src_images_dir.glob(f'*{ext}'))
+            images.extend(src_images_dir.glob(f'*{ext.upper()}'))
+        images = sorted(set(images))
+
+        for img_path in images:
+            stem = img_path.stem
+            dst_label = dst_labels / f"{stem}.txt"
             if dst_label.exists():
                 continue
-            lines_out = []
-            for line in src_label.read_text().splitlines():
-                line = line.strip()
-                if not line:
+
+            digit_boxes = self._read_digit_labels(src_labels / f"{stem}.txt")
+            if not digit_boxes:
+                continue
+
+            x1_min = min(cx - w / 2 for cx, cy, w, h in digit_boxes)
+            y1_min = min(cy - h / 2 for cx, cy, w, h in digit_boxes)
+            x2_max = max(cx + w / 2 for cx, cy, w, h in digit_boxes)
+            y2_max = max(cy + h / 2 for cx, cy, w, h in digit_boxes)
+            roi_cx = (x1_min + x2_max) / 2
+            roi_cy = (y1_min + y2_max) / 2
+            roi_w = x2_max - x1_min
+            roi_h = y2_max - y1_min
+
+            img = PILImage.open(img_path).convert("RGB")
+            img_w, img_h = img.size
+
+            cx, cy, w, h = roi_cx, roi_cy, roi_w, roi_h
+            pad_w = w * padding
+            pad_h = h * padding
+            x1_n = max(0.0, cx - w / 2 - pad_w)
+            y1_n = max(0.0, cy - h / 2 - pad_h)
+            x2_n = min(1.0, cx + w / 2 + pad_w)
+            y2_n = min(1.0, cy + h / 2 + pad_h)
+
+            x1_px = int(x1_n * img_w)
+            y1_px = int(y1_n * img_h)
+            x2_px = int(x2_n * img_w)
+            y2_px = int(y2_n * img_h)
+
+            crop_w = x2_px - x1_px
+            crop_h = y2_px - y1_px
+            if crop_w < 1 or crop_h < 1:
+                continue
+
+            cropped = img.crop((x1_px, y1_px, x2_px, y2_px))
+
+            out_labels = []
+            for (dcx, dcy, dw, dh) in digit_boxes:
+                px1, py1, px2, py2 = self._norm_to_pixel(dcx, dcy, dw, dh, img_w, img_h)
+                clip_x1 = max(px1, x1_px)
+                clip_y1 = max(py1, y1_px)
+                clip_x2 = min(px2, x2_px)
+                clip_y2 = min(py2, y2_px)
+                if clip_x2 <= clip_x1 or clip_y2 <= clip_y1:
                     continue
-                parts = line.split()
-                if len(parts) < 5:
+                rel_x1 = clip_x1 - x1_px
+                rel_y1 = clip_y1 - y1_px
+                rel_x2 = clip_x2 - x1_px
+                rel_y2 = clip_y2 - y1_px
+                ncx, ncy, nw, nh = self._pixel_to_norm(rel_x1, rel_y1, rel_x2, rel_y2, crop_w, crop_h)
+                if nw < 0.001 or nh < 0.001:
                     continue
-                try:
-                    cx, cy, w, h = float(parts[1]), float(parts[2]), float(parts[3]), float(parts[4])
-                    lines_out.append(f"0 {cx:.6f} {cy:.6f} {w:.6f} {h:.6f}\n")
-                except (ValueError, IndexError):
-                    continue
-            if not lines_out:
-                dst_label.touch()
-            else:
-                dst_label.write_text("".join(lines_out))
+                out_labels.append(f"0 {ncx:.6f} {ncy:.6f} {nw:.6f} {nh:.6f}\n")
+
+            if not out_labels:
+                continue
+
+            out_img = dst_images / f"{stem}{img_path.suffix}"
+            cropped.save(out_img)
+            dst_label.write_text("".join(out_labels))
 
         return dst_path
+
+    def _read_digit_labels(self, path: Path) -> List[Tuple[float, float, float, float]]:
+        """Read digit boxes from label file. Returns list of (cx, cy, w, h) in normalized coords."""
+        boxes = []
+        if not path.exists():
+            return boxes
+        for line in path.read_text().splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split()
+            if len(parts) < 5:
+                continue
+            try:
+                boxes.append((float(parts[1]), float(parts[2]), float(parts[3]), float(parts[4])))
+            except (ValueError, IndexError):
+                continue
+        return boxes
+
+    def _norm_to_pixel(self, cx: float, cy: float, w: float, h: float, img_w: int, img_h: int) -> Tuple[float, float, float, float]:
+        """Convert normalized YOLO box to pixel corners (x1, y1, x2, y2)."""
+        x1 = (cx - w / 2) * img_w
+        y1 = (cy - h / 2) * img_h
+        x2 = (cx + w / 2) * img_w
+        y2 = (cy + h / 2) * img_h
+        return (x1, y1, x2, y2)
+
+    def _pixel_to_norm(self, x1: float, y1: float, x2: float, y2: float, crop_w: float, crop_h: float) -> Tuple[float, float, float, float]:
+        """Convert pixel corners to normalized YOLO box (cx, cy, w, h)."""
+        cx = (x1 + x2) / 2 / crop_w
+        cy = (y1 + y2) / 2 / crop_h
+        w = (x2 - x1) / crop_w
+        h = (y2 - y1) / crop_h
+        return (cx, cy, w, h)
 
     def get_images_from_source(self, source_config: DataSourceConfig) -> List[Path]:
         """
@@ -384,7 +482,7 @@ class ManifestLoader:
             if source.get('is_digit_to_dial'):
                 print(f"  ℹ Digit-to-dial conversion (labels cached to <source>_dial/)")
             if source.get('is_digit_to_position'):
-                print(f"  ℹ Digit-to-position conversion (labels cached to <source>_pos/)")
+                print(f"  ℹ Digit-to-position (crop+renorm) conversion (labels cached to <source>_pos/)")
             print(f"  Weighted Contribution: {source['weighted_contribution']:.1f}")
             print()
         
