@@ -15,6 +15,8 @@ from datetime import datetime
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from src.data.manifest_loader import ManifestLoader
+
 try:
     from ultralytics import YOLO
     ULTRALYTICS_AVAILABLE = True
@@ -30,13 +32,13 @@ class Stage3ClsTrainer:
     """
 
     def __init__(self,
-                 data_root: str = 'data/digit_crops',
+                 manifest_path: str = 'datasets/mix_v1_stage3.yaml',
                  workspace_root: str = None):
         """
         Initialize the trainer.
 
         Args:
-            data_root: Path to digit crops directory (train/{0-9}/, val/{0-9}/)
+            manifest_path: Path to dataset manifest YAML
             workspace_root: Root directory for the project
         """
         if workspace_root is None:
@@ -44,7 +46,8 @@ class Stage3ClsTrainer:
         else:
             self.workspace_root = Path(workspace_root)
 
-        self.data_root = self.workspace_root / data_root
+        self.manifest_path = Path(manifest_path)
+        self.data_root = self.workspace_root / 'data' / 'digit_crops_mixed'
 
         # Paths
         self.configs_dir = self.workspace_root / 'configs'
@@ -59,35 +62,29 @@ class Stage3ClsTrainer:
         print("PIPELINE STAGE 3: DIGIT CLASSIFICATION TRAINER")
         print("=" * 80)
         print(f"Workspace: {self.workspace_root}")
-        print(f"Data root: {self.data_root}")
+        print(f"Manifest: {self.manifest_path}")
         print()
 
     def prepare_data(self):
-        """Verify digit crops exist and write data.yaml for classification."""
+        """Build classification dataset from manifest and write data.yaml."""
         print("STEP 1: Preparing Data Configuration")
         print("-" * 80)
+
+        loader = ManifestLoader(str(self.manifest_path), str(self.workspace_root))
+        loader.print_statistics()
+
+        print("\nBuilding classification dataset...")
+        self.data_root = loader.build_classification_dataset(
+            output_dir=self.workspace_root / 'data' / 'digit_crops_mixed',
+            val_split=0.2,
+            seed=42
+        )
 
         train_dir = self.data_root / 'train'
         val_dir = self.data_root / 'val'
 
-        if not train_dir.exists():
-            raise FileNotFoundError(
-                f"Training data not found: {train_dir}\n"
-                "Please run scripts/prepare_stage3_data.py first."
-            )
-        if not val_dir.exists():
-            raise FileNotFoundError(
-                f"Validation data not found: {val_dir}\n"
-                "Please run scripts/prepare_stage3_data.py first."
-            )
-
-        # Verify class folders 0-9 exist
-        for cls in range(10):
-            if not (train_dir / str(cls)).exists():
-                raise FileNotFoundError(
-                    f"Class folder not found: {train_dir / str(cls)}\n"
-                    "Please run scripts/prepare_stage3_data.py first."
-                )
+        train_count = sum(len(list((train_dir / str(cls)).iterdir())) for cls in range(10))
+        val_count = sum(len(list((val_dir / str(cls)).iterdir())) for cls in range(10))
 
         # Write data.yaml for Ultralytics classification
         data_config = {
@@ -103,8 +100,8 @@ class Stage3ClsTrainer:
             yaml.dump(data_config, f, default_flow_style=False, sort_keys=False)
 
         print(f"✓ Data configuration: {data_yaml_path}")
-        print(f"  Train: {train_dir}")
-        print(f"  Val: {val_dir}")
+        print(f"  Train: {train_dir} ({train_count} crops)")
+        print(f"  Val: {val_dir} ({val_count} crops)")
         print(f"  Classes: 0-9")
         print()
 
@@ -231,7 +228,7 @@ class Stage3ClsTrainer:
 
         except FileNotFoundError as e:
             print(f"\n✗ Error: {e}")
-            print("\nPlease run scripts/prepare_stage3_data.py first. See README_TRAINING.md for setup.")
+            print("\nPlease ensure manifest sources (data/basic, etc.) exist. See README_TRAINING.md for setup.")
             sys.exit(1)
         except Exception as e:
             print(f"\n✗ Training failed: {e}")
@@ -246,10 +243,10 @@ def main():
         description='Train Pipeline Stage 3 (digit classification)'
     )
     parser.add_argument(
-        '--data-root',
+        '--manifest',
         type=str,
-        default='data/digit_crops',
-        help='Path to digit crops directory (train/{0-9}/, val/{0-9}/)'
+        default='datasets/mix_v1_stage3.yaml',
+        help='Path to dataset manifest YAML'
     )
     parser.add_argument(
         '--workspace',
@@ -266,7 +263,7 @@ def main():
     args = parser.parse_args()
 
     trainer = Stage3ClsTrainer(
-        data_root=args.data_root,
+        manifest_path=args.manifest,
         workspace_root=args.workspace
     )
 

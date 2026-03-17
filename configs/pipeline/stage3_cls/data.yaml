@@ -1,4 +1,4 @@
-path: /backup/d.yin/meter-reader-train/data/digit_crops
+path: /backup/d.yin/meter-reader-train/data/digit_crops_mixed
 train: train
 val: val
 names:

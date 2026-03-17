@@ -1,4 +1,5 @@
 # Training Mix for General Robustness
+# Stage 1 training mix (dial detection)
 train_policy:
   - source: data/basic
     weight: 1.0

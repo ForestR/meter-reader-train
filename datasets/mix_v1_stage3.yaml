@@ -1,0 +1,15 @@
+# Stage 3 training mix (digit classification)
+train_policy:
+  - source: data/basic
+    weight: 1.0
+    label_map: digit_to_classification
+  - source: data/city_Xuzhou
+    weight: 2.0
+    label_map: digit_to_classification
+  - source: data/hard_cases
+    weight: 2.0 # Oversample hard cases
+    label_map: digit_to_classification
+  # We don't need negative samples for stage3 since it is a pure classification task
+  # - source: data/negative_samples # The "Dirty" Dataset
+  #   weight: 0.2 # 20% of batch will be background to teach model what is NOT a meter
+  #   label_map: empty # Images have no boxes

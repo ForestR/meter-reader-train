@@ -36,6 +36,10 @@ class DataSourceConfig:
         """Check if this source has digit labels to convert to class-agnostic positions."""
         return self.label_map == 'digit_to_position'
 
+    def is_digit_to_classification(self) -> bool:
+        """Check if this source has digit labels for classification (crop per digit, nc=10)."""
+        return self.label_map == 'digit_to_classification'
+
 
 @dataclass
 class ManifestConfig:
@@ -280,6 +284,126 @@ class ManifestLoader:
         h = (y2 - y1) / crop_h
         return (cx, cy, w, h)
 
+    def _ensure_digit_to_classification_cache(self, source_config: DataSourceConfig,
+                                              val_split: float = 0.2,
+                                              seed: int = 42,
+                                              padding: float = 0.1) -> Path:
+        """
+        Extract per-digit crops for classification (nc=10).
+        Writes to '<source>_cls/train/{0-9}/' and '<source>_cls/val/{0-9}/'.
+        Idempotent: skips if cache exists and is non-empty.
+        Returns the path to the cache root.
+        """
+        if PILImage is None:
+            raise ImportError("PIL/Pillow required for digit_to_classification. Install with: pip install Pillow")
+
+        src_path = self.resolve_path(source_config.source)
+        dst_path = src_path.parent / (src_path.name + '_cls')
+        src_images_dir = src_path / 'images'
+        src_labels = src_path / 'labels'
+
+        if not src_images_dir.exists():
+            raise FileNotFoundError(f"Images directory not found: {src_images_dir}")
+        if not src_labels.exists():
+            raise FileNotFoundError(f"Labels directory not found: {src_labels}")
+
+        train_dst = dst_path / 'train'
+        val_dst = dst_path / 'val'
+        if train_dst.exists() and any((train_dst / str(cls)).exists() and any((train_dst / str(cls)).iterdir()) for cls in range(10)):
+            return dst_path
+
+        random.seed(seed)
+        crops_by_class: Dict[int, List[Tuple[Path, int, int, int, int]]] = {i: [] for i in range(10)}
+
+        images = []
+        for ext in self.image_extensions:
+            images.extend(src_images_dir.glob(f'*{ext}'))
+            images.extend(src_images_dir.glob(f'*{ext.upper()}'))
+        images = sorted(set(images))
+
+        for img_path in images:
+            stem = img_path.stem
+            label_path = src_labels / f"{stem}.txt"
+            boxes = self._read_digit_boxes_with_class(label_path)
+            if not boxes:
+                continue
+
+            img = PILImage.open(img_path).convert("RGB")
+            img_w, img_h = img.size
+
+            for cls, cx, cy, w, h in boxes:
+                x1, y1, x2, y2 = self._norm_to_pixel_cls(cx, cy, w, h, img_w, img_h)
+                x1, y1, x2, y2 = self._apply_padding(x1, y1, x2, y2, img_w, img_h, padding)
+                if x2 <= x1 or y2 <= y1:
+                    continue
+                crop_w = x2 - x1
+                crop_h = y2 - y1
+                if crop_w < 2 or crop_h < 2:
+                    continue
+                crops_by_class[cls].append((img_path, x1, y1, x2, y2))
+
+        for cls in range(10):
+            (train_dst / str(cls)).mkdir(parents=True, exist_ok=True)
+            (val_dst / str(cls)).mkdir(parents=True, exist_ok=True)
+
+        global_crop_idx = 0
+        for cls in range(10):
+            items = crops_by_class[cls]
+            random.shuffle(items)
+            n_val = max(0, int(len(items) * val_split))
+
+            for i, (img_path, x1, y1, x2, y2) in enumerate(items):
+                split = "val" if i < n_val else "train"
+                img = PILImage.open(img_path).convert("RGB")
+                crop = img.crop((x1, y1, x2, y2))
+                out_name = f"{img_path.stem}_{cls}_{global_crop_idx:06d}.png"
+                out_path = dst_path / split / str(cls) / out_name
+                crop.save(out_path)
+                global_crop_idx += 1
+
+        return dst_path
+
+    def _read_digit_boxes_with_class(self, path: Path) -> List[Tuple[int, float, float, float, float]]:
+        """Read digit boxes with class IDs. Returns list of (cls, cx, cy, w, h)."""
+        boxes = []
+        if not path.exists():
+            return boxes
+        for line in path.read_text().splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split()
+            if len(parts) < 5:
+                continue
+            try:
+                cls = int(parts[0])
+                cx, cy, w, h = float(parts[1]), float(parts[2]), float(parts[3]), float(parts[4])
+                if 0 <= cls <= 9:
+                    boxes.append((cls, cx, cy, w, h))
+            except (ValueError, IndexError):
+                continue
+        return boxes
+
+    def _norm_to_pixel_cls(self, cx: float, cy: float, w: float, h: float, img_w: int, img_h: int) -> Tuple[int, int, int, int]:
+        """Convert normalized YOLO box to pixel corners (x1, y1, x2, y2) as ints."""
+        x1 = int((cx - w / 2) * img_w)
+        y1 = int((cy - h / 2) * img_h)
+        x2 = int((cx + w / 2) * img_w)
+        y2 = int((cy + h / 2) * img_h)
+        return (x1, y1, x2, y2)
+
+    def _apply_padding(self, x1: int, y1: int, x2: int, y2: int, img_w: int, img_h: int, padding: float) -> Tuple[int, int, int, int]:
+        """Expand box by padding fraction, clipped to image bounds."""
+        w = x2 - x1
+        h = y2 - y1
+        pad_w = int(w * padding)
+        pad_h = int(h * padding)
+        x1 = max(0, x1 - pad_w)
+        y1 = max(0, y1 - pad_h)
+        x2 = min(img_w, x2 + pad_w)
+        y2 = min(img_h, y2 + pad_h)
+        return (x1, y1, x2, y2)
+
     def get_images_from_source(self, source_config: DataSourceConfig) -> List[Path]:
         """
         Get all image files from a data source.
@@ -422,7 +546,66 @@ class ManifestLoader:
         if not label_path.exists():
             label_path.touch()
         return str(label_path)
-    
+
+    def build_classification_dataset(self,
+                                     output_dir: Path,
+                                     val_split: float = 0.2,
+                                     seed: int = 42) -> Path:
+        """
+        Merge all digit_to_classification sources into a single output directory.
+        Clears output_dir/train/{0-9}/ and val/{0-9}/, then symlinks crops with weight repetition.
+        Returns the output_dir path.
+        """
+        output_dir = Path(output_dir)
+        train_dir = output_dir / 'train'
+        val_dir = output_dir / 'val'
+
+        for cls in range(10):
+            (train_dir / str(cls)).mkdir(parents=True, exist_ok=True)
+            (val_dir / str(cls)).mkdir(parents=True, exist_ok=True)
+            for p in (train_dir / str(cls)).iterdir():
+                p.unlink()
+            for p in (val_dir / str(cls)).iterdir():
+                p.unlink()
+
+        random.seed(seed)
+        symlink_counter = 0
+
+        for source_config in self.config.train_policy:
+            if not source_config.is_digit_to_classification():
+                continue
+
+            cache_path = self._ensure_digit_to_classification_cache(
+                source_config, val_split=val_split, seed=seed
+            )
+            weight = source_config.weight
+            base_count = max(1, int(weight))
+            fractional_weight = weight - int(weight) if weight >= 1 else weight
+
+            for split in ('train', 'val'):
+                src_split = cache_path / split
+                dst_split = output_dir / split
+                for cls in range(10):
+                    src_cls = src_split / str(cls)
+                    dst_cls = dst_split / str(cls)
+                    if not src_cls.exists():
+                        continue
+                    for crop_path in sorted(src_cls.iterdir()):
+                        if crop_path.suffix.lower() not in {'.jpg', '.jpeg', '.png', '.bmp'}:
+                            continue
+                        n_replicates = base_count
+                        if random.random() < fractional_weight:
+                            n_replicates += 1
+                        for r in range(n_replicates):
+                            suffix = f"_w{r}" if n_replicates > 1 else ""
+                            source_prefix = source_config.source.replace('/', '_')
+                            out_name = f"{source_prefix}_{crop_path.stem}{suffix}{crop_path.suffix}"
+                            out_path = dst_cls / out_name
+                            out_path.symlink_to(crop_path.resolve())
+                            symlink_counter += 1
+
+        return output_dir
+
     def get_statistics(self) -> Dict:
         """
         Get statistics about the manifest datasets.
@@ -449,6 +632,7 @@ class ManifestLoader:
                 'is_negative': source_config.is_negative_sample(),
                 'is_digit_to_dial': source_config.is_digit_to_dial(),
                 'is_digit_to_position': source_config.is_digit_to_position(),
+                'is_digit_to_classification': source_config.is_digit_to_classification(),
                 'weighted_contribution': num_images * source_config.weight
             }
             
@@ -483,6 +667,8 @@ class ManifestLoader:
                 print(f"  ℹ Digit-to-dial conversion (labels cached to <source>_dial/)")
             if source.get('is_digit_to_position'):
                 print(f"  ℹ Digit-to-position (crop+renorm) conversion (labels cached to <source>_pos/)")
+            if source.get('is_digit_to_classification'):
+                print(f"  ℹ Digit-to-classification conversion (crops cached to <source>_cls/)")
             print(f"  Weighted Contribution: {source['weighted_contribution']:.1f}")
             print()
         
