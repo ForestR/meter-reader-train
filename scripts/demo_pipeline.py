@@ -48,6 +48,11 @@ def main():
         help="Save annotated visualization image",
     )
     parser.add_argument(
+        "--show-digit-labels",
+        action="store_true",
+        help="Show class/conf labels on digit bboxes (default: hide)",
+    )
+    parser.add_argument(
         "--topology",
         type=str,
         default="configs/model_topology.yaml",
@@ -137,7 +142,7 @@ def main():
             print(f"{img_path.name} -> {result.reading}  (conf: {result.confidence:.2f})")
         if args.save_vis and result is not None and CV2_AVAILABLE:
             img = cv2.imread(str(img_path))
-            vis = draw_pipeline_result(img, result)
+            vis = draw_pipeline_result(img, result, show_digit_labels=args.show_digit_labels)
             out_dir = Path(args.output or img_path.parent)
             out_dir.mkdir(parents=True, exist_ok=True)
             out_path = out_dir / f"{img_path.stem}_vis{img_path.suffix}"
@@ -173,7 +178,7 @@ def main():
             print(f"{img_path.name} -> {reading}  (conf: {conf:.2f})")
             if args.save_vis and result is not None and CV2_AVAILABLE:
                 img = cv2.imread(str(img_path))
-                vis = draw_pipeline_result(img, result)
+                vis = draw_pipeline_result(img, result, show_digit_labels=args.show_digit_labels)
                 out_path = out_dir / f"{img_path.stem}_vis{img_path.suffix}"
                 cv2.imwrite(str(out_path), vis)
 

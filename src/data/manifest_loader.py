@@ -23,6 +23,10 @@ class DataSourceConfig:
         """Check if this source contains negative samples (no labels)."""
         return self.label_map == 'empty'
 
+    def is_digit_to_dial(self) -> bool:
+        """Check if this source has digit-level labels to convert to dial-level."""
+        return self.label_map == 'digit_to_dial'
+
 
 @dataclass
 class ManifestConfig:
@@ -72,7 +76,63 @@ class ManifestLoader:
         if path.is_absolute():
             return path
         return self.workspace_root / path
-    
+
+    def _ensure_digit_to_dial_cache(self, source_config: DataSourceConfig) -> Path:
+        """
+        Convert digit-level labels (classes 0-9) to a single class-0 dial bbox.
+        Writes converted labels to a sibling '<source>_dial/' directory.
+        Idempotent: skips conversion for labels that already exist.
+        Returns the path to the converted source root.
+        """
+        src_path = self.resolve_path(source_config.source)
+        dst_path = src_path.parent / (src_path.name + '_dial')
+        dst_labels = dst_path / 'labels'
+        dst_images = dst_path / 'images'
+        src_labels = src_path / 'labels'
+
+        if not src_labels.exists():
+            raise FileNotFoundError(f"Labels directory not found: {src_labels}")
+
+        dst_labels.mkdir(parents=True, exist_ok=True)
+        if not dst_images.exists():
+            dst_images.symlink_to((src_path / 'images').resolve())
+
+        for src_label in sorted(src_labels.glob('*.txt')):
+            dst_label = dst_labels / src_label.name
+            if dst_label.exists():
+                continue
+            boxes = []
+            for line in src_label.read_text().splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                parts = line.split()
+                if len(parts) < 5:
+                    continue
+                try:
+                    cx, cy, w, h = float(parts[1]), float(parts[2]), float(parts[3]), float(parts[4])
+                    x1 = cx - w / 2
+                    x2 = cx + w / 2
+                    y1 = cy - h / 2
+                    y2 = cy + h / 2
+                    boxes.append((x1, y1, x2, y2))
+                except (ValueError, IndexError):
+                    continue
+            if not boxes:
+                dst_label.touch()
+            else:
+                x1_min = min(b[0] for b in boxes)
+                y1_min = min(b[1] for b in boxes)
+                x2_max = max(b[2] for b in boxes)
+                y2_max = max(b[3] for b in boxes)
+                cx = (x1_min + x2_max) / 2
+                cy = (y1_min + y2_max) / 2
+                w = x2_max - x1_min
+                h = y2_max - y1_min
+                dst_label.write_text(f"0 {cx:.6f} {cy:.6f} {w:.6f} {h:.6f}\n")
+
+        return dst_path
+
     def get_images_from_source(self, source_config: DataSourceConfig) -> List[Path]:
         """
         Get all image files from a data source.
@@ -83,7 +143,10 @@ class ManifestLoader:
         Returns:
             List of image file paths
         """
-        source_path = self.resolve_path(source_config.source)
+        if source_config.is_digit_to_dial():
+            source_path = self._ensure_digit_to_dial_cache(source_config)
+        else:
+            source_path = self.resolve_path(source_config.source)
         images_dir = source_path / 'images'
         
         if not images_dir.exists():
@@ -112,8 +175,11 @@ class ManifestLoader:
         if source_config.is_negative_sample():
             # Negative samples don't need labels
             return num_images, 0, []
-        
-        source_path = self.resolve_path(source_config.source)
+
+        if source_config.is_digit_to_dial():
+            source_path = self._ensure_digit_to_dial_cache(source_config)
+        else:
+            source_path = self.resolve_path(source_config.source)
         labels_dir = source_path / 'labels'
         
         if not labels_dir.exists():
@@ -230,6 +296,7 @@ class ManifestLoader:
                 'labels': num_labels,
                 'missing_labels': len(missing),
                 'is_negative': source_config.is_negative_sample(),
+                'is_digit_to_dial': source_config.is_digit_to_dial(),
                 'weighted_contribution': num_images * source_config.weight
             }
             
@@ -260,6 +327,8 @@ class ManifestLoader:
                 print(f"  ⚠ Missing Labels: {source['missing_labels']}")
             if source['is_negative']:
                 print(f"  ℹ Negative Samples (no labels expected)")
+            if source.get('is_digit_to_dial'):
+                print(f"  ℹ Digit-to-dial conversion (labels cached to <source>_dial/)")
             print(f"  Weighted Contribution: {source['weighted_contribution']:.1f}")
             print()
         
