@@ -27,6 +27,10 @@ class DataSourceConfig:
         """Check if this source has digit-level labels to convert to dial-level."""
         return self.label_map == 'digit_to_dial'
 
+    def is_digit_to_position(self) -> bool:
+        """Check if this source has digit labels to convert to class-agnostic positions."""
+        return self.label_map == 'digit_to_position'
+
 
 @dataclass
 class ManifestConfig:
@@ -133,6 +137,51 @@ class ManifestLoader:
 
         return dst_path
 
+    def _ensure_digit_to_position_cache(self, source_config: DataSourceConfig) -> Path:
+        """
+        Convert digit-level labels (classes 0-9) to class-agnostic position labels (all class 0).
+        Keeps each individual bounding box; only remaps class IDs.
+        Writes converted labels to a sibling '<source>_pos/' directory.
+        Idempotent: skips conversion for labels that already exist.
+        Returns the path to the converted source root.
+        """
+        src_path = self.resolve_path(source_config.source)
+        dst_path = src_path.parent / (src_path.name + '_pos')
+        dst_labels = dst_path / 'labels'
+        dst_images = dst_path / 'images'
+        src_labels = src_path / 'labels'
+
+        if not src_labels.exists():
+            raise FileNotFoundError(f"Labels directory not found: {src_labels}")
+
+        dst_labels.mkdir(parents=True, exist_ok=True)
+        if not dst_images.exists():
+            dst_images.symlink_to((src_path / 'images').resolve())
+
+        for src_label in sorted(src_labels.glob('*.txt')):
+            dst_label = dst_labels / src_label.name
+            if dst_label.exists():
+                continue
+            lines_out = []
+            for line in src_label.read_text().splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                parts = line.split()
+                if len(parts) < 5:
+                    continue
+                try:
+                    cx, cy, w, h = float(parts[1]), float(parts[2]), float(parts[3]), float(parts[4])
+                    lines_out.append(f"0 {cx:.6f} {cy:.6f} {w:.6f} {h:.6f}\n")
+                except (ValueError, IndexError):
+                    continue
+            if not lines_out:
+                dst_label.touch()
+            else:
+                dst_label.write_text("".join(lines_out))
+
+        return dst_path
+
     def get_images_from_source(self, source_config: DataSourceConfig) -> List[Path]:
         """
         Get all image files from a data source.
@@ -145,6 +194,8 @@ class ManifestLoader:
         """
         if source_config.is_digit_to_dial():
             source_path = self._ensure_digit_to_dial_cache(source_config)
+        elif source_config.is_digit_to_position():
+            source_path = self._ensure_digit_to_position_cache(source_config)
         else:
             source_path = self.resolve_path(source_config.source)
         images_dir = source_path / 'images'
@@ -178,6 +229,8 @@ class ManifestLoader:
 
         if source_config.is_digit_to_dial():
             source_path = self._ensure_digit_to_dial_cache(source_config)
+        elif source_config.is_digit_to_position():
+            source_path = self._ensure_digit_to_position_cache(source_config)
         else:
             source_path = self.resolve_path(source_config.source)
         labels_dir = source_path / 'labels'
@@ -297,6 +350,7 @@ class ManifestLoader:
                 'missing_labels': len(missing),
                 'is_negative': source_config.is_negative_sample(),
                 'is_digit_to_dial': source_config.is_digit_to_dial(),
+                'is_digit_to_position': source_config.is_digit_to_position(),
                 'weighted_contribution': num_images * source_config.weight
             }
             
@@ -329,6 +383,8 @@ class ManifestLoader:
                 print(f"  ℹ Negative Samples (no labels expected)")
             if source.get('is_digit_to_dial'):
                 print(f"  ℹ Digit-to-dial conversion (labels cached to <source>_dial/)")
+            if source.get('is_digit_to_position'):
+                print(f"  ℹ Digit-to-position conversion (labels cached to <source>_pos/)")
             print(f"  Weighted Contribution: {source['weighted_contribution']:.1f}")
             print()
         
