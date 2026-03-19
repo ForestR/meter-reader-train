@@ -76,6 +76,11 @@ def main():
         default=None,
         help="Device for inference (e.g. 0, cpu)",
     )
+    parser.add_argument(
+        "--auto-rename",
+        action="store_true",
+        help="Rename output files as value_{reading}_{hash8} (direct mode only)",
+    )
 
     args = parser.parse_args()
     workspace = Path(args.workspace or Path.cwd())
@@ -112,6 +117,7 @@ def main():
         use_pipeline_hint=not args.no_pipeline_hint,
         review=args.review,
         stage1_labels_dir=stage1_labels_dir,
+        auto_rename=args.auto_rename,
     )
 
     print(f"Labeled: {stats['labeled']}, Skipped: {stats['skipped']}")

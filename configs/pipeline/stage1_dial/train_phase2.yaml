@@ -11,7 +11,7 @@ data: configs/pipeline/stage1_dial/data.yaml  # Same data as Phase 1
 
 # Training Hyperparameters
 epochs: 50
-batch: 32
+batch: 16
 imgsz: 640
 device: 0  # GPU device (0 for first GPU, cpu for CPU)
 

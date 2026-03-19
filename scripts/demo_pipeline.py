@@ -11,7 +11,7 @@ from pathlib import Path
 # Add project root for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.pipeline import PipelineReader, ReadingResult, AutoLabeler, draw_pipeline_result
+from src.pipeline import PipelineReader, ReadingResult, AutoLabeler, LabelSorter, draw_pipeline_result
 
 try:
     import cv2
@@ -73,7 +73,7 @@ def main():
     parser.add_argument(
         "--auto-label",
         type=str,
-        choices=["stage1", "stage2"],
+        choices=["stage1", "stage2", "stage3"],
         default=None,
         help="Run auto-labeling instead of demo",
     )
@@ -82,6 +82,22 @@ def main():
         type=str,
         default="data/auto_label",
         help="Destination for --auto-label output",
+    )
+    parser.add_argument(
+        "--auto-rename",
+        action="store_true",
+        help="With --auto-label stage2/stage3: name outputs as value_{reading}_{hash8}",
+    )
+    parser.add_argument(
+        "--sort",
+        action="store_true",
+        help="With --auto-label: route skipped to pending_review, atypical readings to atypical/",
+    )
+    parser.add_argument(
+        "--rules",
+        type=str,
+        default="configs/labeling_rules.yaml",
+        help="Path to labeling_rules.yaml (used with --sort)",
     )
     parser.add_argument(
         "--conf-thresh",
@@ -113,8 +129,16 @@ def main():
             device=args.device,
         )
         labeler = AutoLabeler(reader, conf_thresh=args.conf_thresh)
-        stats = labeler.label_directory(src, dst, stage=args.auto_label, dry_run=args.dry_run)
-        print(f"Processed: {stats['processed']}, Labeled: {stats['labeled']}, Skipped (low conf): {stats['skipped_low_conf']}")
+        sorter = None
+        if args.sort:
+            sorter = LabelSorter(rules_path=args.rules, workspace_root=workspace)
+        stats = labeler.label_directory(
+            src, dst, stage=args.auto_label, dry_run=args.dry_run, auto_rename=args.auto_rename, sorter=sorter
+        )
+        print(f"Processed: {stats['processed']}, Labeled: {stats['labeled']}, Skipped (low conf): {stats['skipped_low_conf']}", end="")
+        if sorter:
+            print(f"  |  Pending review: {stats['pending_review']}  |  Atypical: {stats['atypical']}", end="")
+        print()
         if args.dry_run:
             print("(Dry run - no files written)")
         return

@@ -4,6 +4,7 @@ Supports direct (digit bboxes with class 0-9 on full image), Stage 1 (dial bbox)
 and Stage 2 (digit bboxes in ROI crop). Uses pipeline prediction as optional hint.
 """
 
+import hashlib
 import os
 from pathlib import Path
 from typing import Dict, List, Literal, Optional, Tuple
@@ -97,6 +98,14 @@ def _read_yolo_label_with_class(
             except (ValueError, IndexError):
                 continue
     return result
+
+
+def _reading_from_direct(
+    boxes_with_class: List[Tuple[float, float, float, float, int]],
+) -> str:
+    """Derive reading string by sorting boxes left-to-right and concatenating digit classes."""
+    sorted_boxes = sorted(boxes_with_class, key=lambda b: (b[0] + b[2]) / 2)
+    return "".join(str(b[4]) for b in sorted_boxes)
 
 
 class _LabelerState:
@@ -354,10 +363,12 @@ class ManualLabeler:
         use_pipeline_hint: bool = True,
         review: bool = False,
         stage1_labels_dir: Optional[Path] = None,
+        auto_rename: bool = False,
     ) -> Dict[str, int]:
         """
         Label all images in directory. Returns {"labeled": N, "skipped": N, "quit": 0|1}.
         For stage2, stage1_labels_dir must point to directory containing labels from stage1 (to crop ROI).
+        auto_rename: If True (direct mode only), output files named value_{reading}_{hash8}.
         """
         images_dir = src_images / "images" if (src_images / "images").exists() else src_images
         if not images_dir.exists():
@@ -454,11 +465,18 @@ class ManualLabeler:
                 cv2.destroyWindow(win_name)
 
                 if result_direct:
-                    with open(label_path, "w") as f:
+                    if auto_rename:
+                        reading = _reading_from_direct(result_direct)
+                        h = hashlib.md5(img_path.name.encode()).hexdigest()[:8]
+                        stem_out = f"value_{reading}_{h}"
+                    else:
+                        stem_out = stem
+                    label_path_out = dst_labels / f"{stem_out}.txt"
+                    out_img = dst_images / f"{stem_out}{img_path.suffix}"
+                    with open(label_path_out, "w") as f:
                         for x1, y1, x2, y2, cls in result_direct:
                             cx, cy, bw, bh = _xyxy_to_yolo_norm(x1, y1, x2, y2, work_w, work_h)
                             f.write(f"{cls} {cx:.6f} {cy:.6f} {bw:.6f} {bh:.6f}\n")
-                    out_img = dst_images / f"{stem}{img_path.suffix}"
                     import shutil
                     shutil.copy2(img_path, out_img)
                     stats["labeled"] += 1
