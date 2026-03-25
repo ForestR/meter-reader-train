@@ -4,7 +4,10 @@ train_policy:
     weight: 1.0
     label_map: digit_to_classification
   - source: data/city_Xuzhou
-    weight: 2.0
+    weight: 1.5
+    label_map: digit_to_classification
+  - source: data/city_Xian
+    weight: 1.5
     label_map: digit_to_classification
   - source: data/hard_cases
     weight: 2.0 # Oversample hard cases

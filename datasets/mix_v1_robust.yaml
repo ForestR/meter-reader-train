@@ -4,14 +4,15 @@ train_policy:
   - source: data/basic
     weight: 1.0
     label_map: digit_to_dial
-  # - source: data/basic_e2e  # Optional: End-to-end labels without lable_map
-  #   weight: 1.0
   - source: data/city_Xuzhou
-    weight: 2.0
+    weight: 1.6
     label_map: digit_to_dial
-  - source: data/negative_samples # The "Dirty" Dataset
-    weight: 0.2 # 20% of batch will be background to teach model what is NOT a meter
-    label_map: empty # Images have no boxes
+  - source: data/city_Xian
+    weight: 1.6
+    label_map: digit_to_dial
   - source: data/hard_cases
     weight: 2.0 # Oversample hard cases
     label_map: digit_to_dial
+  - source: data/negative_samples # The "Dirty" Dataset
+    weight: 0.15 # 15% of batch will be background to teach model what is NOT a meter
+    label_map: empty # Images have no boxes

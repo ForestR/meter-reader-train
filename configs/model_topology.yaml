@@ -8,6 +8,6 @@ CHECKPOINTS:
     # STAGE_1_DIAL: checkpoints/production/01_dial_det.pt  
     # STAGE_2_DIGIT: checkpoints/production/02_digit_det.pt 
     # STAGE_3_CLS: checkpoints/production/03_digit_cls.pt
-    STAGE_1_DIAL: checkpoints/pipeline/stage1_dial/final.pt
-    STAGE_2_DIGIT: checkpoints/pipeline/stage2_digit/final.pt
+    STAGE_1_DIAL: checkpoints/pipeline/stage1_dial/phase2_best.pt
+    STAGE_2_DIGIT: checkpoints/pipeline/stage2_digit/phase2_best.pt
     STAGE_3_CLS: checkpoints/pipeline/stage3_cls/final.pt

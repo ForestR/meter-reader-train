@@ -3,7 +3,7 @@
 # Goal: Rapidly adapt detection head to meter reading task while preserving ImageNet features
 
 # Model Configuration
-model: yolo26n.pt  # Pretrained YOLO26-N weights
+model: yolo26n.pt  # Pretrained YOLO weights
 task: detect
 
 # Data Configuration
