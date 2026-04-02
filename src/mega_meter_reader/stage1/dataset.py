@@ -8,6 +8,7 @@ fallback parser/materializer is used (segment NDJSON from Ultralytics Platform).
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import random
@@ -26,6 +27,32 @@ except Exception:  # pragma: no cover
     _ul_convert_ndjson_to_yolo = None
 
 DEFAULT_NAMES = ["dial", "decimal_section"]
+
+
+def _md5_of_file(path: Path) -> str:
+    """Return hex MD5 digest of file contents (chunked read)."""
+    h = hashlib.md5()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _cached_md5_path(stem_dir: Path) -> Path:
+    return stem_dir / ".ndjson_md5"
+
+
+def _read_cached_md5(stem_dir: Path) -> Optional[str]:
+    p = _cached_md5_path(stem_dir)
+    if not p.is_file():
+        return None
+    txt = p.read_text(encoding="utf-8").strip()
+    return txt if txt else None
+
+
+def _write_cached_md5(stem_dir: Path, digest: str) -> None:
+    stem_dir.mkdir(parents=True, exist_ok=True)
+    _cached_md5_path(stem_dir).write_text(digest + "\n", encoding="utf-8")
 
 
 def _try_ultralytics_convert(ndjson_path: Path, output_path: Path) -> Optional[Path]:
@@ -191,17 +218,26 @@ def materialize_ndjson(
         output_parent = Path(output_parent).resolve()
 
     stem_dir = output_parent / ndjson_path.stem
+    current_md5 = _md5_of_file(ndjson_path)
+
     if refresh and stem_dir.exists():
         shutil.rmtree(stem_dir)
 
     if not refresh and (stem_dir / "data.yaml").is_file():
-        return (stem_dir / "data.yaml").resolve()
+        cached_md5 = _read_cached_md5(stem_dir)
+        if cached_md5 == current_md5:
+            return (stem_dir / "data.yaml").resolve()
+        if stem_dir.exists():
+            shutil.rmtree(stem_dir)
 
     ul = _try_ultralytics_convert(ndjson_path, output_parent)
     if ul is not None:
+        _write_cached_md5(stem_dir, current_md5)
         return ul.resolve()
 
-    return _materialize_ndjson_fallback(ndjson_path, output_parent, fraction=fraction)
+    out = _materialize_ndjson_fallback(ndjson_path, output_parent, fraction=fraction)
+    _write_cached_md5(stem_dir, current_md5)
+    return out
 
 
 def _load_mix_policy(mix_yaml: Path) -> List[Tuple[Path, float]]:

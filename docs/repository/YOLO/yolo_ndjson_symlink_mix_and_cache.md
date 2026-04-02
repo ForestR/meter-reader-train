@@ -68,6 +68,29 @@ Here “prefetch” means **ensure materialized YOLO trees exist** for each sour
 
 ---
 
+## NDJSON MD5 validation (skill)
+
+**Problem:** A stable path like `…/meter-panel.ndjson` is not enough by itself. If you **replace or edit that file in place** (same basename, updated contents), a naive cache check that only asks “does `data.yaml` exist under `<ndjson_parent>/<stem>/`?” will **reuse old images and labels** and never see the new NDJSON.
+
+**Skill:** Record the **MD5 digest of the raw NDJSON file** next to the materialized tree and compare on every materialization.
+
+| Item | Convention |
+|------|----------------|
+| **Where** | `<stem_dir>/.ndjson_md5` — same directory as `data.yaml`, `images/`, `labels/` (i.e. `output_parent / <ndjson_stem>/`). |
+| **What** | One line: hex MD5 of the **entire NDJSON file** (byte-for-byte). |
+| **When to skip work** | `data.yaml` exists **and** stored digest equals the current MD5 of the NDJSON path → return cached `data.yaml` immediately. |
+| **When to rebuild** | Digest missing, mismatched, or explicit **refresh** → remove `<stem_dir>`, run conversion again, then write a fresh `.ndjson_md5`. |
+
+**Behaviour notes:**
+
+- **Legacy caches** without `.ndjson_md5` should be treated as **invalid once** (rebuild, then write the sidecar file) so future runs get fast, correct hits.
+- **Ultralytics** may also store its own skip logic in `data.yaml`; MD5 on the **source NDJSON** still matters for wrappers that short-circuit before calling the converter, or when the fallback materializer does not mirror the library’s hash rules.
+- **Symlink mix** rebuilds the combined directory each run but still calls **per-source** `materialize_ndjson`; MD5 validation applies **per source** automatically.
+
+**Implementation in this repo:** `mega_meter_reader.stage1.dataset.materialize_ndjson` implements the read/compare/write flow for both the Ultralytics converter path and the built-in fallback.
+
+---
+
 ## Refresh: invalidate cache
 
 Expose a **boolean** (CLI flag and/or config) meaning: **delete cached materialization** and rebuild.
@@ -99,6 +122,7 @@ so that if you ever train directly on merged NDJSON, `datasets_dir/<stem>` stays
 
 | Topic | Guidance |
 |--------|----------|
+| **NDJSON identity** | Prefer **MD5 of the NDJSON file** in `<stem_dir>/.ndjson_md5` so in-place file updates invalidate the materialized cache without relying on `--refresh-data` alone. |
 | **Filename uniqueness** | Symlink mix usually keys on `(split, basename)`. Collisions across sources break or require renaming. |
 | **Class map** | All sources must agree on class IDs if you use one merged `names` block (often from the first dataset header). |
 | **Symlinks** | On Linux/macOS they are standard. On Windows, symlink creation may require developer mode or admin rights; fall back to copies or junctions if you must support restricted environments. |
@@ -135,5 +159,6 @@ Adapt to your project’s module names and config layout.
 ## Summary
 
 - **Stable stems** for source NDJSON materialization enable **cache reuse**.
+- **MD5 sidecar** (`.ndjson_md5`) ties the materialized tree to the **current NDJSON bytes**, so in-place updates **auto-invalidate** stale caches without always using **refresh**.
 - **Symlink mix** combines sources **without** duplicating images and **without** feeding a merged NDJSON into conversion each time.
 - **Refresh** wipes known cache directories so the next run fully reconverts and re-fetches as needed.
