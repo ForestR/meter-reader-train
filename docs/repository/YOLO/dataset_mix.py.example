@@ -1,0 +1,252 @@
+"""Mix multiple NDJSON sources: materialize per-source YOLO dirs, then symlink into one mix layout."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+import shutil
+from pathlib import Path
+from typing import Any
+
+import yaml
+from ultralytics.utils import YAML
+
+
+def _find_repo_root(start: Path) -> Path:
+    for p in (start, *start.parents):
+        if (p / "pyproject.toml").is_file() or (p / ".git").exists():
+            return p
+    return start.resolve()
+
+
+def resolve_source_path(mix_yaml: Path, rel: str) -> Path:
+    """Resolve NDJSON path relative to mix file, repo root, or cwd."""
+    p = Path(rel)
+    if p.is_absolute():
+        return p
+    for base in (mix_yaml.parent, mix_yaml.parent.parent, Path.cwd()):
+        cand = (base / p).resolve()
+        if cand.is_file():
+            return cand
+    return (Path.cwd() / p).resolve()
+
+
+def default_source_dataset_dir(ndjson: Path) -> Path:
+    """
+    Default local YOLO dataset directory for an NDJSON file: ``<parent>/<stem>/``.
+
+    Ultralytics writes under ``output_path / ndjson.stem``; using ``output_path = ndjson.parent``
+    yields ``.../meter-panel.ndjson`` → ``.../meter-panel/``.
+    """
+    return (ndjson.parent / ndjson.stem).resolve()
+
+
+def default_mix_dataset_dir(mix_yaml: Path) -> Path:
+    """Default symlink-mix directory beside the mix policy file: ``<parent>/<stem>/``."""
+    return (mix_yaml.parent / mix_yaml.stem).resolve()
+
+
+def resolve_mix_ndjson_paths(mix_yaml: Path) -> list[Path]:
+    """Ordered list of resolved NDJSON paths from ``train_policy``."""
+    cfg = yaml.safe_load(mix_yaml.read_text(encoding="utf-8"))
+    policy = cfg.get("train_policy") or []
+    if not policy:
+        raise ValueError("mix yaml has no train_policy")
+    out: list[Path] = []
+    for item in policy:
+        src = resolve_source_path(mix_yaml, item["source"])
+        if not src.is_file():
+            raise FileNotFoundError(f"mix source not found: {src}")
+        out.append(src)
+    return out
+
+
+def merge_ndjson_from_mix(mix_yaml: Path, *, merged_ndjson: Path | None = None) -> Path:
+    """
+    Concatenate image lines from multiple NDJSON files listed in train_policy.
+
+    Uses the dataset header line from the first file only. Sampling ``weight`` is
+    not applied here (all rows are kept).
+
+    If ``merged_ndjson`` is None, writes to ``data/cache/mix/<mix_yaml_stem>/merged.ndjson``
+    under the repository root (see :func:`_find_repo_root`).
+    """
+    cfg = yaml.safe_load(mix_yaml.read_text(encoding="utf-8"))
+    policy = cfg.get("train_policy") or []
+    if not policy:
+        raise ValueError("mix yaml has no train_policy")
+
+    out_lines: list[str] = []
+    header: str | None = None
+    for item in policy:
+        src = resolve_source_path(mix_yaml, item["source"])
+        if not src.is_file():
+            raise FileNotFoundError(f"mix source not found: {src}")
+        text = src.read_text(encoding="utf-8").strip()
+        if not text:
+            continue
+        lines = text.splitlines()
+        if header is None:
+            header = lines[0]
+            out_lines.append(header)
+        for line in lines[1:]:
+            out_lines.append(line)
+
+    if merged_ndjson is None:
+        root = _find_repo_root(mix_yaml.parent)
+        merged_ndjson = root / "data/cache/mix" / mix_yaml.stem / "merged.ndjson"
+    merged_ndjson.parent.mkdir(parents=True, exist_ok=True)
+    merged_ndjson.write_text("\n".join(out_lines) + "\n", encoding="utf-8")
+    return merged_ndjson
+
+
+async def materialize_ndjson(ndjson: Path, output_root: Path) -> Path:
+    """Convert one NDJSON to YOLO layout under ``output_root / ndjson.stem``; returns ``data.yaml`` path."""
+    from ultralytics.data.converter import convert_ndjson_to_yolo
+
+    return await convert_ndjson_to_yolo(str(ndjson), output_path=output_root)
+
+
+def materialize_ndjson_sync(ndjson: Path, output_root: Path) -> Path:
+    return asyncio.run(materialize_ndjson(ndjson, output_root))
+
+
+def _dataset_header(first_ndjson: Path) -> dict[str, Any]:
+    line = first_ndjson.read_text(encoding="utf-8").splitlines()[0]
+    return json.loads(line)
+
+
+def build_symlink_mix(
+    mix_yaml: Path,
+    source_ndjsons: list[Path],
+    source_dataset_dirs: list[Path],
+    mix_dir: Path,
+) -> Path:
+    """
+    Create ``mix_dir`` with ``images/{split}`` and ``labels/{split}`` as symlinks into
+    each entry in ``source_dataset_dirs`` (same order as ``source_ndjsons``).
+
+    Filenames must be unique across all sources.
+
+    Returns path to ``mix_dir/data.yaml``.
+    """
+    if len(source_ndjsons) < 1:
+        raise ValueError("need at least one NDJSON source")
+    if len(source_ndjsons) != len(source_dataset_dirs):
+        raise ValueError("source_ndjsons and source_dataset_dirs must have the same length")
+
+    if mix_dir.exists():
+        shutil.rmtree(mix_dir)
+    mix_dir.mkdir(parents=True, exist_ok=True)
+
+    header = _dataset_header(source_ndjsons[0])
+    class_names = {int(k): v for k, v in header.get("class_names", {}).items()}
+
+    splits_seen: set[str] = set()
+    seen_names: dict[tuple[str, str], Path] = {}
+
+    for ndjson_path, src_root in zip(source_ndjsons, source_dataset_dirs, strict=True):
+        src_root = src_root.resolve()
+        lines = ndjson_path.read_text(encoding="utf-8").strip().splitlines()
+        for line in lines[1:]:
+            rec = json.loads(line)
+            if rec.get("type") != "image":
+                continue
+            split = rec["split"]
+            file = rec["file"]
+            key = (split, file)
+            src_img = (src_root / "images" / split / file).resolve()
+            if key in seen_names:
+                raise ValueError(
+                    f"Mix collision: split={split!r} file={file!r} already linked from "
+                    f"{seen_names[key]}; symlink mix requires unique filenames across sources."
+                )
+            seen_names[key] = ndjson_path
+
+            dst_img = mix_dir / "images" / split / file
+            dst_lbl = mix_dir / "labels" / split / f"{Path(file).stem}.txt"
+            src_lbl = (src_root / "labels" / split / f"{Path(file).stem}.txt").resolve()
+
+            dst_img.parent.mkdir(parents=True, exist_ok=True)
+            dst_lbl.parent.mkdir(parents=True, exist_ok=True)
+
+            if not src_img.is_file():
+                raise FileNotFoundError(f"materialized image missing (run convert first): {src_img}")
+
+            rel_img = os.path.relpath(src_img, start=dst_img.parent)
+            dst_img.symlink_to(rel_img)
+            splits_seen.add(split)
+
+            if src_lbl.is_file():
+                rel_lbl = os.path.relpath(src_lbl, start=dst_lbl.parent)
+                dst_lbl.symlink_to(rel_lbl)
+            else:
+                dst_lbl.write_text("")
+
+    data_yaml: dict[str, Any] = {
+        "task": header.get("task", "segment"),
+        "names": class_names,
+    }
+    for split in ("train", "val", "test"):
+        if split in splits_seen:
+            data_yaml[split] = f"images/{split}"
+
+    yaml_path = mix_dir / "data.yaml"
+    YAML.save(yaml_path, data_yaml)
+    return yaml_path.resolve()
+
+
+def prepare_mix_training_data(
+    mix_yaml: Path,
+    *,
+    output_root: Path | None = None,
+    refresh_data: bool = False,
+) -> Path:
+    """
+    Ensure each policy NDJSON is materialized, then build the symlink mix.
+
+    When ``output_root`` is omitted (default), each NDJSON is converted next to itself:
+    ``<ndjson_parent>/<ndjson_stem>/`` (e.g. ``data/stage1_dial_seg/meter-panel/``). The mix
+    layout is written beside the mix YAML: ``<mix_parent>/<mix_stem>/``.
+
+    When ``output_root`` is set, use the previous single-root layout: per-source
+    ``output_root/<ndjson_stem>/`` and mix at ``output_root/<mix_stem>/`` (Ultralytics
+    global cache style).
+
+    Returns absolute path to the mix ``data.yaml`` for ``YOLO.train(data=...)``.
+    """
+    mix_yaml = mix_yaml.resolve()
+    sources = [p.resolve() for p in resolve_mix_ndjson_paths(mix_yaml)]
+
+    if output_root is None:
+        mix_dir = default_mix_dataset_dir(mix_yaml)
+        source_dirs = [default_source_dataset_dir(src) for src in sources]
+
+        if refresh_data:
+            if mix_dir.exists():
+                shutil.rmtree(mix_dir)
+            for d in source_dirs:
+                if d.exists():
+                    shutil.rmtree(d)
+
+        for src in sources:
+            materialize_ndjson_sync(src, src.parent)
+
+        return build_symlink_mix(mix_yaml, sources, source_dirs, mix_dir)
+
+    root = Path(output_root).resolve()
+    mix_dir = root / mix_yaml.stem
+    source_dirs = [root / src.stem for src in sources]
+
+    if refresh_data:
+        if mix_dir.exists():
+            shutil.rmtree(mix_dir)
+        for d in source_dirs:
+            if d.exists():
+                shutil.rmtree(d)
+
+    for src in sources:
+        materialize_ndjson_sync(src, root)
+
+    return build_symlink_mix(mix_yaml, sources, source_dirs, mix_dir)

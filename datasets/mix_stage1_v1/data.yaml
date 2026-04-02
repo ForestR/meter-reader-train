@@ -1,0 +1,8 @@
+path: /backup/d.yin/meter-reader-train/datasets/mix_stage1_v1
+train: images/train
+val: images/val
+nc: 2
+names:
+- 0
+- 1
+task: segment

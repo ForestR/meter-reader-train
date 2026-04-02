@@ -1,0 +1,6 @@
+# Stage 1 YOLO-seg two-phase training (see docs/architecture.md)
+mix: datasets/mix_stage1_v1.yaml
+model: yolo11n-seg.pt
+device: "0"
+phase1_config: configs/mega_meter_reader/stage1/train_phase1.yaml
+phase2_config: configs/mega_meter_reader/stage1/train_phase2.yaml

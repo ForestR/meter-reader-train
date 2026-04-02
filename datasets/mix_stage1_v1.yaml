@@ -1,0 +1,6 @@
+# Stage 1 training mix: dial + decimal_section segmentation (NDJSON sources)
+train_policy:
+  - source: data/stage1_dial_seg/meter-panel.ndjson
+    weight: 1.0
+  - source: data/stage1_dial_seg/water-meter.ndjson
+    weight: 1.0

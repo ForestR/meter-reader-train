@@ -1,0 +1,53 @@
+# Phase 1 Training Configuration: Head Adaptation (Frozen Backbone)
+# Stage 1 (dial segmentation: dial + decimal_section)
+
+# Model/Data
+task: segment
+epochs: 30
+batch: 16
+imgsz: 640
+device: "0"
+
+# Transfer Learning
+freeze: 10
+
+# Optimization
+optimizer: AdamW
+lr0: 0.01
+lrf: 0.01
+momentum: 0.937
+weight_decay: 0.0005
+
+# Warmup
+warmup_epochs: 3.0
+warmup_momentum: 0.8
+warmup_bias_lr: 0.1
+
+# Augmentation
+hsv_h: 0.015
+hsv_s: 0.7
+hsv_v: 0.4
+degrees: 15.0
+translate: 0.1
+scale: 0.5
+shear: 0.0
+perspective: 0.0005
+flipud: 0.0
+fliplr: 0.5
+mosaic: 1.0
+mixup: 0.1
+
+# Validation/Logging
+val: true
+save: true
+save_period: -1
+exist_ok: true
+project: runs/stage1_seg
+name: train_phase1
+verbose: true
+plots: true
+
+# Advanced
+patience: 50
+close_mosaic: 10
+amp: true

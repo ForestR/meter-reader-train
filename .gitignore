@@ -23,3 +23,7 @@ __pycache__/
 
 # temp file
 tmp/
+
+# datasets
+images/
+labels/

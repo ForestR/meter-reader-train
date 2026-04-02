@@ -103,8 +103,8 @@ class DataYAMLGenerator:
     
     def generate_for_pipeline_stage1(self, output_path: str = 'configs/pipeline/stage1_dial/data.yaml') -> Dict:
         """
-        Generate data.yaml for Pipeline Stage 1 (dial detection) training.
-        Stage 1 detects the meter display ROI as a single class (meter_display).
+        Generate data.yaml for Pipeline Stage 1 (dial segmentation) training.
+        Stage 1 segments dial ROI and decimal_section (nc=2).
         
         Args:
             output_path: Path where data.yaml will be saved
@@ -114,8 +114,8 @@ class DataYAMLGenerator:
         """
         return self.generate_data_yaml(
             output_path=output_path,
-            num_classes=1,
-            class_names=['meter_display'],
+            num_classes=2,
+            class_names=['dial', 'decimal_section'],
             val_split=0.2,
             seed=42
         )

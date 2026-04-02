@@ -1,10 +1,10 @@
 # Phase 2 Training Configuration: Deep Fine-tuning (Unfrozen All Layers)
-# Pipeline Stage 1 (Dial Detection)
+# Pipeline Stage 1 (Dial segmentation)
 # Goal: Allow backbone to learn domain-specific features (LCD reflections, mechanical fonts)
 
 # Model Configuration
 model: checkpoints/pipeline/stage1_dial/phase1_best.pt  # Resume from Phase 1 best model
-task: detect
+task: segment
 
 # Data Configuration
 data: configs/pipeline/stage1_dial/data.yaml  # Same data as Phase 1
@@ -51,7 +51,7 @@ save_period: -1  # Save checkpoint every X epochs (-1 = only save last and best)
 exist_ok: true   # Allow overwriting existing experiment
 
 # Logging
-project: runs/detect
+project: runs/stage1_seg
 name: train_phase2_stage1_dial
 verbose: true
 plots: true  # Generate training plots

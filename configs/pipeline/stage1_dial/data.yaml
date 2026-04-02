@@ -1,6 +1,7 @@
 path: /backup/d.yin/meter-reader-train
 train: /backup/d.yin/meter-reader-train/configs/pipeline/stage1_dial/train_images.txt
 val: /backup/d.yin/meter-reader-train/configs/pipeline/stage1_dial/val_images.txt
-nc: 1
+nc: 2
 names:
-- meter_display
+- dial
+- decimal_section

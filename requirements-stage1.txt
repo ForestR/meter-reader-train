@@ -1,0 +1,6 @@
+# Stage 1 (dial segmentation + DIAL ROI) — use with Conda env that has PyTorch, or install torch separately.
+ultralytics>=8.0.0
+numpy>=1.24.0,<2.0.0
+opencv-python-headless>=4.8.0
+PyYAML>=6.0
+scipy>=1.10.0

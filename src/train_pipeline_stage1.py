@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Pipeline Stage 1 (Dial Detection) Training Script
-Trains a YOLO detector to localize the meter display ROI. Uses a 2-phase strategy:
+Pipeline Stage 1 (Dial Segmentation) Training Script
+Trains a YOLO segmenter for dial + decimal_section masks. Uses a 2-phase strategy:
 Phase 1 (Frozen Backbone) and Phase 2 (Unfrozen Fine-tuning).
 """
 
@@ -29,8 +29,8 @@ except ImportError:
 
 class Stage1DialTrainer:
     """
-    Orchestrates Pipeline Stage 1 (dial detection) training with phased strategy.
-    Produces a single-class detector for meter_display ROI localization.
+    Orchestrates Pipeline Stage 1 (dial segmentation) training with phased strategy.
+    Produces a two-class segmenter for dial + decimal_section masks.
     """
 
     def __init__(self,
@@ -61,7 +61,7 @@ class Stage1DialTrainer:
         self.results_dir.mkdir(parents=True, exist_ok=True)
 
         print("=" * 80)
-        print("PIPELINE STAGE 1: DIAL DETECTION TRAINER")
+        print("PIPELINE STAGE 1: DIAL SEGMENTATION TRAINER")
         print("=" * 80)
         print(f"Workspace: {self.workspace_root}")
         print(f"Manifest: {self.manifest_path}")
@@ -120,7 +120,7 @@ class Stage1DialTrainer:
 
         # Use absolute project path to avoid nested runs/detect/runs/detect when cwd or
         # Ultralytics base path differs from workspace root (project must be absolute)
-        train_config['project'] = str(self.workspace_root / 'runs' / 'detect')
+        train_config['project'] = str(self.workspace_root / 'runs' / 'stage1_seg')
 
         print(f"Configuration: {config_path}")
         print(f"Model: {train_config['model']}")
@@ -143,6 +143,7 @@ class Stage1DialTrainer:
 
         # Train with configuration
         results = model.train(
+            task=train_config.get('task', 'segment'),
             data=train_config['data'],
             epochs=train_config['epochs'],
             batch=train_config['batch'],
@@ -232,7 +233,7 @@ class Stage1DialTrainer:
         train_config['data'] = data_yaml
 
         # Use absolute project path to avoid nested runs/detect/runs/detect (same as Phase 1)
-        train_config['project'] = str(self.workspace_root / 'runs' / 'detect')
+        train_config['project'] = str(self.workspace_root / 'runs' / 'stage1_seg')
 
         print(f"Configuration: {config_path}")
         print(f"Model: {phase1_model}")
@@ -255,6 +256,7 @@ class Stage1DialTrainer:
 
         # Train with configuration
         results = model.train(
+            task=train_config.get('task', 'segment'),
             data=train_config['data'],
             epochs=train_config['epochs'],
             batch=train_config['batch'],
@@ -404,7 +406,7 @@ class Stage1DialTrainer:
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
-        description='Train Pipeline Stage 1 (dial detection) with phased strategy'
+        description='Train Pipeline Stage 1 (dial segmentation) with phased strategy'
     )
     parser.add_argument(
         '--manifest',

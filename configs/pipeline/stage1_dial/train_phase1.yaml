@@ -1,10 +1,10 @@
 # Phase 1 Training Configuration: Head Adaptation (Frozen Backbone)
-# Pipeline Stage 1 (Dial Detection)
-# Goal: Rapidly adapt detection head to meter reading task while preserving ImageNet features
+# Pipeline Stage 1 (Dial segmentation: dial + decimal_section)
+# Goal: Rapidly adapt segmentation head to meter reading task while preserving ImageNet features
 
 # Model Configuration
-model: yolo26n.pt  # Pretrained YOLO weights
-task: detect
+model: yolo11n-seg.pt  # Pretrained YOLO segmentation weights
+task: segment
 
 # Data Configuration
 data: configs/pipeline/stage1_dial/data.yaml  # Generated from manifest
@@ -51,7 +51,7 @@ save_period: -1  # Save checkpoint every X epochs (-1 = only save last and best)
 exist_ok: true   # Allow overwriting existing experiment
 
 # Logging
-project: runs/detect
+project: runs/stage1_seg
 name: train_phase1_stage1_dial
 verbose: true
 plots: true  # Generate training plots
