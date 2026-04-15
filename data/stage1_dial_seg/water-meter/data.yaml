@@ -1,0 +1,16 @@
+task: segment
+name: water meter
+description: "Re-labeled.\nDataset comprises 1,000+ images of water meters, including
+  their corresponding segmentation masks. \nOriginal source: https://github.com/UniData-pro/water-meters"
+bytes: 314664809
+url: https://platform.ultralytics.com/alex-da-yin/datasets/water-meter
+version: latest
+created_at: '2026-03-26T00:43:44.298Z'
+updated_at: '2026-04-01T00:49:50.037Z'
+names:
+  0: dial
+  1: decimal_section
+test: images/test
+train: images/train
+val: images/val
+hash: 8218fbfb101d8c3d

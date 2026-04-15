@@ -1,0 +1,23 @@
+task: segment
+name: meter panel
+description: 'This dataset is specifically designed for segmenting the region of interest
+  (ROI) within the dial reading area, and this region is characterized by containing
+  the dial wheel (mechanical roller counter) device.
+
+  此数据集专为对表盘读数区域内的ROI进行分割而设计，ROI的特征是包含有字轮（机械滚轮计数器）装置。
+
+  Warning: This dataset (with 500 samples) contains approximately 5% negative samples.
+
+  警告：此数据集（包含 500 个样本）中约有 5%为负样本。'
+bytes: 34859465
+url: https://platform.ultralytics.com/alex-da-yin/datasets/meter-panel
+version: latest
+created_at: '2026-03-27T03:18:54.553Z'
+updated_at: '2026-04-02T02:19:55.326Z'
+names:
+  0: dial
+  1: decimal_section
+test: images/test
+train: images/train
+val: images/val
+hash: 08d4117cf0b8af32
